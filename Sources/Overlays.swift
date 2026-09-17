@@ -120,25 +120,44 @@ private struct CrosshairShape: Shape {
     }
 }
 
-/// A horizon level line, the same idea as the native Camera app's: a line across the
-/// middle of the frame that rotates with the phone's roll and switches to an accent color
-/// once you're close enough to level to actually mean it — a small snap-to-attention cue,
-/// not just a passive protractor reading.
+/// A horizon level line, the same idea as the native Camera app's — but split into two
+/// segments with a gap at the exact center instead of one solid bar. Asked for directly:
+/// a full line straight across the middle of the frame sits right over whatever the
+/// subject actually is, which both looks wrong (nothing should permanently block the
+/// center of a camera viewfinder — the one thing App Review consistently flags on camera
+/// UIs) and gives no real sense of the shot. Leaving that center point open lets the
+/// subject show through untouched while the two flanking segments still read as a level.
+/// The gap and segment length aren't fixed either — both scale continuously with how far
+/// off level the phone actually is (the literal "Skalierung ... der X-Achse" asked for),
+/// so the whole element tightens toward center as it approaches level instead of just
+/// flipping color at the threshold — the line becomes the feedback, not just a label on it.
 struct LevelLine: View {
     let rollDegrees: Double
     private let levelThreshold = 1.0
 
     private var isLevel: Bool { abs(rollDegrees) < levelThreshold }
 
+    /// 0...1, how far off level, capped at 12° — drives both segment length and gap width.
+    private var tilt: Double { min(abs(rollDegrees) / 12, 1) }
+
     var body: some View {
         GeometryReader { geo in
-            Rectangle()
-                .fill(isLevel ? Brand.mint : .white.opacity(0.65))
-                .frame(width: 76, height: isLevel ? 2.5 : 2)
-                .position(x: geo.size.width / 2, y: geo.size.height / 2)
-                .rotationEffect(.degrees(-rollDegrees))
-                .animation(.easeOut(duration: 0.12), value: rollDegrees)
-                .shadow(color: .black.opacity(0.5), radius: 2)
+            let color = isLevel ? Brand.mint : Color.white.opacity(0.65)
+            let thickness: CGFloat = isLevel ? 2.5 : 2
+            // Off level: segments reach outward and the center gap widens, giving the tilt
+            // more visual weight. Near level: both pull back in — a tightening, not just a
+            // color swap, so approaching level reads as "closing in on the mark".
+            let segmentLength: CGFloat = 22 + tilt * 18
+            let gap: CGFloat = isLevel ? 12 : 16 + tilt * 10
+
+            HStack(spacing: gap) {
+                Capsule().fill(color).frame(width: segmentLength, height: thickness)
+                Capsule().fill(color).frame(width: segmentLength, height: thickness)
+            }
+            .shadow(color: .black.opacity(0.5), radius: 2)
+            .position(x: geo.size.width / 2, y: geo.size.height / 2)
+            .rotationEffect(.degrees(-rollDegrees))
+            .animation(.easeOut(duration: 0.12), value: rollDegrees)
         }
     }
 }
