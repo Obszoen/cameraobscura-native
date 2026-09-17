@@ -8,15 +8,7 @@ targets:
     type: application
     platform: iOS
     sources:
-      - path: Sources
-        excludes:
-          - FisheyeKernels.metal
-      # Core Image kernel .metal files need the -fcikernel compiler flag (per file, not
-      # a target-wide linker flag) — without it, coreimage::sampler's implementation
-      # never gets linked in and the Metal library fails with "symbol(s) not found".
-      - path: Sources/FisheyeKernels.metal
-        compilerFlags:
-          - -fcikernel
+      - Sources
     info:
       path: Sources/Info.plist
     settings:
@@ -45,9 +37,6 @@ targets:
       - path: PhotoEditingExtension
       - path: Sources/LensLook.swift
       - path: Sources/FisheyeFilter.swift
-      - path: Sources/FisheyeKernels.metal
-        compilerFlags:
-          - -fcikernel
     info:
       path: PhotoEditingExtension/Info.plist
     settings:

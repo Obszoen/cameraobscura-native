@@ -249,7 +249,7 @@ final class CameraModel: NSObject, ObservableObject {
     // MARK: - Shared processing pipeline (same math the web version used, now GPU-accelerated)
 
     /// Lens-accurate equisolid fisheye warp + chromatic aberration + vignette (see
-    /// FisheyeKernels.metal / FisheyeFilter.swift) — a real optical model, not a generic
+    /// FisheyeFilter.swift) — a real optical model, not a generic
     /// radial bump. Uses the live depth map for depth-aware distortion on LiDAR devices.
     private func applyFisheye(to image: CIImage) -> CIImage {
         guard fisheyeStrength > 0.001 else { return image }
