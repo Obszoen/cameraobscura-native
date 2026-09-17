@@ -76,6 +76,14 @@ struct SettingsPanel: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.leading)
+
+                PanelGroove()
+
+                PanelLegend(text: "Sound")
+                HStack {
+                    PanelToggle(title: "Auslöser & Aufnahme", isOn: $settings.soundEnabled, accent: Brand.rose)
+                    Spacer()
+                }
             }
             .padding()
         }

@@ -14,6 +14,11 @@ import UIKit
 /// colored arc stays as a printed-scale/LED-ring cue behind the cap — real hardware
 /// (synths, older cameras) commonly combines both around one physical knob.
 struct RotaryKnob: View {
+    // Drives the viewfinder's live value overlay + accent edge tint while this knob is
+    // being touched — a sibling of the preview in the view tree, not a parent/child, so
+    // this is how the two actually talk to each other.
+    @EnvironmentObject var activeControl: ActiveControl
+
     let title: String
     @Binding var value: Double // 0...1
     var accent: Color = Brand.rose
@@ -80,8 +85,15 @@ struct RotaryKnob: View {
                     DragGesture(minimumDistance: 0)
                         .onChanged { drag in
                             isDragging = true
-                            if dragStartValue == nil { dragStartValue = value }
-                            let travelPoints: CGFloat = 150 // full 0...1 sweep over this much vertical drag
+                            if dragStartValue == nil {
+                                dragStartValue = value
+                                activeControl.begin(label: title, value: value, accent: accent)
+                            }
+                            // Finer control near the middle of the range (40-60%), asked for
+                            // directly: more physical travel needed per % there, less at the
+                            // extremes where there's less meaningful detail to dial in.
+                            let proximityToCenter = 1 - min(abs((dragStartValue ?? value) - 0.5) * 2, 1)
+                            let travelPoints: CGFloat = 150 + CGFloat(proximityToCenter) * 90
                             let delta = Double(-drag.translation.height / travelPoints)
                             let newValue = min(max(0, (dragStartValue ?? value) + delta), 1)
                             // A real knob's end-of-travel has a physical stop you feel, not
@@ -93,12 +105,19 @@ struct RotaryKnob: View {
                             } else if newValue > 0.001, newValue < 0.999 {
                                 endStopFired = false
                             }
+                            // A tick every 10% crossed, asked for directly — the finger feels
+                            // the steps without needing to watch the number.
+                            if Int((value * 10).rounded()) != Int((newValue * 10).rounded()) {
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred(intensity: 0.4)
+                            }
                             value = newValue
+                            activeControl.update(value: newValue)
                         }
                         .onEnded { _ in
                             isDragging = false
                             dragStartValue = nil
                             endStopFired = false
+                            activeControl.end()
                         }
                 )
                 // `.simultaneousGesture`, not a second `.gesture()` — the drag above uses

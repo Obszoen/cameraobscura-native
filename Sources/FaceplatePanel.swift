@@ -96,3 +96,37 @@ struct PanelGroove: View {
         }
     }
 }
+
+/// A row of engraved calibration ticks, like the printed scale along the edge of a real
+/// mixer or camera control plate — asked for directly to run through the whole faceplate,
+/// not just the zoom fader. Purely decorative (no values attached), which is the point:
+/// it's the same "this is a measured instrument" cue real gear uses on the panel itself,
+/// independent of any one control.
+struct PanelTicks: View {
+    var count: Int = 28
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(0..<count, id: \.self) { i in
+                Rectangle()
+                    .fill(.white.opacity(i % 4 == 0 ? 0.22 : 0.09))
+                    .frame(width: 1, height: i % 4 == 0 ? 6 : 3)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+        .frame(height: 6)
+    }
+}
+
+/// A small status LED with a soft glow, replacing a plain colored capsule label — the same
+/// language a real device uses for "saved"/"error" instead of a system-style toast.
+struct PanelLED: View {
+    let isOn: Bool
+    var color: Color = Brand.mint
+    var body: some View {
+        Circle()
+            .fill(color)
+            .frame(width: 7, height: 7)
+            .shadow(color: color.opacity(isOn ? 0.9 : 0), radius: isOn ? 5 : 0)
+            .opacity(isOn ? 1 : 0.25)
+    }
+}

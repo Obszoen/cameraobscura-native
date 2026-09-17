@@ -11,6 +11,7 @@ struct ContentView: View {
     @StateObject private var camera = CameraModel()
     @StateObject private var presetStore = PresetStore()
     @StateObject private var settings = AppSettings()
+    @StateObject private var activeControl = ActiveControl()
     @State private var mode: Mode = .photo
     @State private var showingSavePresetAlert = false
     @State private var newPresetName = ""
@@ -43,6 +44,7 @@ struct ContentView: View {
             }
         }
         .animation(.spring(response: 0.38, dampingFraction: 0.86), value: showingAdjustments)
+        .environmentObject(activeControl)
         .onAppear { camera.start() }
         .onDisappear { camera.stop() }
         // Backgrounding the app must stop the camera/GPU pipeline immediately, not just
@@ -155,7 +157,38 @@ struct ContentView: View {
                     }
                     .allowsHitTesting(false)
                 }
+
+                // Accent-colored edge tint while any knob/fader is being touched — asked for
+                // directly, so peripheral vision alone tells you which control is live
+                // without looking down at the panel.
+                if let accent = activeControl.label != nil ? activeControl.accent : nil {
+                    Rectangle()
+                        .strokeBorder(accent, lineWidth: 3)
+                        .opacity(0.55)
+                        .allowsHitTesting(false)
+                }
+
+                // The large in-viewfinder value readout — asked for directly: seeing the
+                // effect change is one thing, but the exact number without glancing at the
+                // small in-panel label is what actually keeps eyes on the shot.
+                if let label = activeControl.label, let value = activeControl.value {
+                    VStack(spacing: 2) {
+                        Text(label.uppercased())
+                            .font(.system(size: 12, weight: .bold, design: .monospaced))
+                            .tracking(2)
+                            .foregroundStyle(.white.opacity(0.65))
+                        Text("\(Int(value * 100))")
+                            .font(.system(size: 52, weight: .bold, design: .monospaced))
+                            .foregroundStyle(activeControl.accent)
+                    }
+                    .padding(.horizontal, 28)
+                    .padding(.vertical, 16)
+                    .background(.black.opacity(0.4), in: RoundedRectangle(cornerRadius: 18))
+                    .transition(.opacity.combined(with: .scale(scale: 0.92)))
+                    .allowsHitTesting(false)
+                }
             }
+            .animation(.easeOut(duration: 0.15), value: activeControl.label)
             .contentShape(Rectangle())
             .onTapGesture { location in
                 let normalized = CGPoint(x: location.x / geo.size.width, y: location.y / geo.size.height)
@@ -237,11 +270,17 @@ struct ContentView: View {
     private var bottomBar: some View {
         VStack(spacing: 10) {
             if let ok = camera.lastSaveOK {
-                Text(ok ? "In Fotos gespeichert ✓" : "Speichern fehlgeschlagen")
-                    .font(.caption2)
-                    .foregroundStyle(ok ? .green : .red)
-                    .padding(.horizontal, 8).padding(.vertical, 3)
-                    .background(.black.opacity(0.55), in: Capsule())
+                // An LED + monospaced label instead of a plain colored capsule — the same
+                // "status" language real hardware uses, not a system-style toast.
+                HStack(spacing: 6) {
+                    PanelLED(isOn: true, color: ok ? Brand.mint : .red)
+                    Text(ok ? "GESPEICHERT" : "FEHLER")
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .tracking(1.0)
+                        .foregroundStyle(ok ? Brand.mint : .red)
+                }
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .background(.black.opacity(0.6), in: Capsule())
             }
             HStack {
                 chromeButton("slider.horizontal.3") { showingAdjustments = true }
@@ -275,9 +314,14 @@ struct ContentView: View {
     private var captureButton: some View {
         Button {
             if mode == .photo {
+                if settings.soundEnabled { CameraSounds.shutter() }
                 camera.capturePhoto()
+            } else if camera.isRecording {
+                if settings.soundEnabled { CameraSounds.recordStop() }
+                camera.stopRecording()
             } else {
-                camera.isRecording ? camera.stopRecording() : camera.startRecording()
+                if settings.soundEnabled { CameraSounds.recordStart() }
+                camera.startRecording()
             }
         } label: {
             ZStack {
@@ -301,16 +345,17 @@ struct ContentView: View {
         ScrollView {
             VStack(spacing: 14) {
                 PanelLegend(text: "Optik")
+                PanelTicks()
                 knobRow
 
                 if camera.hasDepthCapability {
                     // Label kept sensor-agnostic — this flag covers both LiDAR devices and
                     // iPhone Air's LiDAR-free single-lens depth pipeline, so "(LiDAR)" would
                     // be wrong on exactly the device this app was built for.
-                    Toggle("Tiefenschärfe-Warp", isOn: $camera.depthEnabled)
-                        .toggleStyle(.switch)
-                        .tint(Brand.rose)
-                        .font(.caption)
+                    HStack {
+                        PanelToggle(title: "Tiefenschärfe-Warp", isOn: $camera.depthEnabled, accent: Brand.rose)
+                        Spacer()
+                    }
                 }
 
                 PanelGroove()
@@ -320,12 +365,14 @@ struct ContentView: View {
                 // named "Tonwerte" rather than "Ton" so it doesn't read as the audio toggle
                 // below in "Modi".
                 PanelLegend(text: "Tonwerte")
+                PanelTicks()
                 toneKnobRowPrimary
                 toneKnobRowSecondary
 
                 PanelGroove()
 
                 PanelLegend(text: "Look")
+                PanelTicks()
                 lookPicker
                 HStack(spacing: 0) {
                     RotaryKnob(title: "Intensität", value: $camera.lookIntensity, accent: Brand.mint, neutralValue: 0)
@@ -337,6 +384,7 @@ struct ContentView: View {
                 PanelGroove()
 
                 PanelLegend(text: "Presets")
+                PanelTicks()
                 presetBar
 
                 if let shuffledPresetName {
@@ -346,28 +394,27 @@ struct ContentView: View {
                 }
 
                 if camera.proRAWAvailable && mode == .photo {
-                    Toggle("ProRAW", isOn: $camera.proRAWEnabled)
-                        .toggleStyle(.switch)
-                        .tint(Brand.mint)
-                        .font(.caption)
+                    HStack {
+                        PanelToggle(title: "ProRAW", isOn: $camera.proRAWEnabled, accent: Brand.mint)
+                        Spacer()
+                    }
                 }
 
                 PanelGroove()
 
                 PanelLegend(text: "Modi")
-                HStack(spacing: 18) {
-                    Toggle("Auto", isOn: $camera.autoEnhance).toggleStyle(.button)
-                    Toggle("Rund", isOn: $camera.circleMask).toggleStyle(.button)
-                    Toggle("Korn", isOn: $camera.grain).toggleStyle(.button)
+                PanelTicks()
+                HStack(spacing: 14) {
+                    PanelToggle(title: "Auto", isOn: $camera.autoEnhance, accent: Brand.mint)
+                    PanelToggle(title: "Rund", isOn: $camera.circleMask, accent: Brand.mint)
+                    PanelToggle(title: "Korn", isOn: $camera.grain, accent: Brand.mint)
                     if mode == .photo {
-                        Toggle("Live", isOn: $camera.livePhotoEnabled).toggleStyle(.button)
+                        PanelToggle(title: "Live", isOn: $camera.livePhotoEnabled, accent: Brand.mint)
                     } else {
-                        Toggle("Ton", isOn: $camera.audioEnabled).toggleStyle(.button)
+                        PanelToggle(title: "Ton", isOn: $camera.audioEnabled, accent: Brand.mint)
                             .disabled(camera.isRecording)
                     }
                 }
-                .font(.caption)
-                .tint(Brand.mint)
 
                 FeedbackBox()
             }
@@ -486,18 +533,33 @@ struct ContentView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     ForEach(LensLook.all) { look in
+                        // A metal-bezel chip instead of a flat colored circle — reported
+                        // directly as "garbage": plain color dots didn't match the rest of
+                        // the panel's rendered-hardware language at all. Same bevel gradient
+                        // as the knob track, an LED (not a thick ring) marks the selection.
                         Button {
                             camera.lookID = look.id
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
                         } label: {
-                            Circle()
-                                .fill(look.previewColor)
-                                .frame(width: 40, height: 40)
-                                .overlay(
-                                    Circle().stroke(Brand.rose, lineWidth: camera.lookID == look.id ? 3 : 0)
-                                )
-                                .overlay(
-                                    Circle().stroke(.white.opacity(0.25), lineWidth: 1)
-                                )
+                            VStack(spacing: 4) {
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(look.previewColor)
+                                    .frame(width: 38, height: 38)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .strokeBorder(
+                                                LinearGradient(colors: [.white.opacity(0.35), .black.opacity(0.5)],
+                                                               startPoint: .topLeading, endPoint: .bottomTrailing),
+                                                lineWidth: 1.5
+                                            )
+                                    )
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .strokeBorder(Brand.rose, lineWidth: camera.lookID == look.id ? 2 : 0)
+                                    )
+                                    .shadow(color: .black.opacity(0.4), radius: 2, y: 1)
+                                PanelLED(isOn: camera.lookID == look.id, color: Brand.rose)
+                            }
                         }
                     }
                 }

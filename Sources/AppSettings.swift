@@ -56,10 +56,15 @@ final class AppSettings: ObservableObject {
     @Published var panelOpacity: Double {
         didSet { UserDefaults.standard.set(panelOpacity, forKey: Keys.opacity) }
     }
+    // Shutter/record sounds — asked for directly, explicitly "optional ausstellbar".
+    @Published var soundEnabled: Bool {
+        didSet { UserDefaults.standard.set(soundEnabled, forKey: Keys.sound) }
+    }
 
     private enum Keys {
         static let edge = "com.danielschweiger.cameraobscura.panelEdge"
         static let opacity = "com.danielschweiger.cameraobscura.panelOpacity"
+        static let sound = "com.danielschweiger.cameraobscura.soundEnabled"
     }
 
     init() {
@@ -69,5 +74,6 @@ final class AppSettings: ObservableObject {
         // usable floor while still letting it get quite see-through.
         let storedOpacity = defaults.object(forKey: Keys.opacity) as? Double
         panelOpacity = storedOpacity ?? 0.97
+        soundEnabled = (defaults.object(forKey: Keys.sound) as? Bool) ?? true
     }
 }

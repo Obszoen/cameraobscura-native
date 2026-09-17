@@ -10,6 +10,8 @@ import UIKit
 /// interaction, the same one real mixers and this app's own knobs both avoid for knobs but
 /// want here.
 struct ZoomFader: View {
+    @EnvironmentObject var activeControl: ActiveControl
+
     @Binding var value: Double // 0...1
     /// Normalized (0...1) positions of "real" native-resolution zoom steps (e.g. the 48MP
     /// Fusion sensor's 2x crop mode) — drawn as brighter ticks and magnetically snapped to
@@ -57,9 +59,11 @@ struct ZoomFader: View {
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { drag in
+                        if !isDragging { activeControl.begin(label: label, value: value, accent: accent) }
                         isDragging = true
                         let raw = 1 - Double(drag.location.y / trackHeight)
                         value = min(max(raw, 0), 1)
+                        activeControl.update(value: value)
                     }
                     .onEnded { _ in
                         isDragging = false
@@ -67,6 +71,7 @@ struct ZoomFader: View {
                             value = snapped
                             UIImpactFeedbackGenerator(style: .rigid).impactOccurred(intensity: 0.7)
                         }
+                        activeControl.end()
                     }
             )
 
