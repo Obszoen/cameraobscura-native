@@ -173,6 +173,8 @@ struct ContentView: View {
                     .font(.caption)
                     .foregroundStyle(ok ? .green : .red)
             }
+
+            FeedbackBox()
         }
         .padding()
         .background(Color(white: 0.08))

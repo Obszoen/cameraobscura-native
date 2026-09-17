@@ -21,6 +21,7 @@ targets:
         CODE_SIGNING_ALLOWED: NO
         DEVELOPMENT_TEAM: ""
         CODE_SIGN_ENTITLEMENTS: Sources/CameraObscura.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     dependencies:
       - sdk: AVFoundation.framework
       - sdk: CoreImage.framework

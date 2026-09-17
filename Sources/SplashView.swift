@@ -35,8 +35,8 @@ struct SplashView: View {
                 }
             }
             .overlay(alignment: .bottomTrailing) {
-                Link(destination: URL(string: "https://instagram.com/OBSZOEN_Official")!) {
-                    Text("programmed by OBSZOEN_Official")
+                Link(destination: URL(string: "https://instagram.com/Obszoen_official")!) {
+                    Text("programmed by Obszoen_official")
                         .font(.system(size: 11, weight: .semibold, design: .rounded))
                         .foregroundStyle(.black.opacity(0.55))
                 }

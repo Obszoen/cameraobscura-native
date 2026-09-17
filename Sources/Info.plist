@@ -34,5 +34,9 @@
     <string>CameraObscura braucht das Mikrofon, um Videos mit Ton aufzunehmen.</string>
     <key>NSPhotoLibraryAddUsageDescription</key>
     <string>CameraObscura speichert deine bearbeiteten Fotos und Videos in deiner Fotos-App.</string>
+    <key>LSApplicationQueriesSchemes</key>
+    <array>
+        <string>instagram</string>
+    </array>
 </dict>
 </plist>
