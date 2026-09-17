@@ -6,6 +6,12 @@ import SwiftUI
 /// section legends. Modeled after synth control surfaces (Korg) and older cameras' metal
 /// control plates — used-pro-gear character, kept precise rather than grungy.
 struct FaceplateBackground: View {
+    /// User-adjustable (Einstellungen → Transparenz) — asked for directly, so the panel can
+    /// go from a solid instrument face to see-through-enough that the viewfinder stays
+    /// legible behind it while dialing something in. Only fades the backing panel itself;
+    /// applied as a `.background()`, so it never touches the controls drawn on top of it.
+    var opacity: Double = 1.0
+
     var body: some View {
         ZStack {
             LinearGradient(
@@ -44,7 +50,11 @@ struct FaceplateBackground: View {
         )
         .overlay(alignment: .topLeading) { PanelScrew().padding(10) }
         .overlay(alignment: .topTrailing) { PanelScrew().padding(10) }
-        .ignoresSafeArea()
+        .opacity(opacity)
+        // Deliberately NOT `.ignoresSafeArea()` here anymore: this view is now used as the
+        // background of a panel whose own size/position (full-bleed on one edge, floating
+        // on the others) is decided by whoever places it — ContentView's adjustmentsPanel
+        // applies safe-area-ignoring itself, only for the edges where it's actually wanted.
     }
 }
 

@@ -10,18 +10,16 @@ import UIKit
 struct ContentView: View {
     @StateObject private var camera = CameraModel()
     @StateObject private var presetStore = PresetStore()
+    @StateObject private var settings = AppSettings()
     @State private var mode: Mode = .photo
     @State private var showingSavePresetAlert = false
     @State private var newPresetName = ""
     @State private var showingAdjustments = false
+    @State private var showingSettings = false
     @State private var pinchStartZoom: CGFloat?
     @State private var showGrid = false
     @State private var lastShuffleIndex: Int?
     @State private var shuffledPresetName: String?
-    // Compact by default: the primary knobs + look picker fit here without dragging,
-    // reported directly as "man muss zu viel ins Bild rücken" with the old .medium/.large
-    // pair. `.large` stays reachable for the secondary controls (presets, toggles).
-    @State private var adjustmentsDetent: PresentationDetent = .height(360)
     @Environment(\.scenePhase) private var scenePhase
 
     enum Mode { case photo, video }
@@ -38,7 +36,13 @@ struct ContentView: View {
                 Spacer()
                 bottomBar
             }
+            if showingAdjustments {
+                adjustmentsPanel
+                    .zIndex(2)
+                    .transition(.move(edge: settings.panelEdge.edge).combined(with: .opacity))
+            }
         }
+        .animation(.spring(response: 0.38, dampingFraction: 0.86), value: showingAdjustments)
         .onAppear { camera.start() }
         .onDisappear { camera.stop() }
         // Backgrounding the app must stop the camera/GPU pipeline immediately, not just
@@ -57,14 +61,8 @@ struct ContentView: View {
         )) {
             BeforeAfterView(camera: camera)
         }
-        .sheet(isPresented: $showingAdjustments) {
-            adjustmentsSheet
-                .presentationDetents([.height(360), .large], selection: $adjustmentsDetent)
-                // A custom grabber capsule is drawn inside adjustmentsSheet itself, styled
-                // to match the panel — the plain system indicator would look like a second,
-                // clashing element stacked on top of it.
-                .presentationDragIndicator(.hidden)
-                .presentationBackground { FaceplateBackground() }
+        .sheet(isPresented: $showingSettings) {
+            SettingsPanel(settings: settings)
         }
         .alert("Preset speichern", isPresented: $showingSavePresetAlert) {
             TextField("Name", text: $newPresetName)
@@ -200,6 +198,10 @@ struct ContentView: View {
                 if !camera.showCompositionCoach { camera.personBoxNormalized = nil }
             }
 
+            chromeButton("gearshape") {
+                showingSettings = true
+            }
+
             if camera.torchAvailable {
                 chromeButton(camera.torchOn ? "bolt.fill" : "bolt.slash",
                              tint: camera.torchOn ? Brand.skyBlue : .white) {
@@ -289,15 +291,15 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Adjustments sheet (fisheye/look/presets) — everything that used to be a
+    // MARK: - Adjustments panel (fisheye/look/presets) — everything that used to be a
     // permanently-stacked wall of controls now lives here, scrollable and dismissible,
-    // so it never clips regardless of screen size.
+    // so it never clips regardless of screen size. Slides in from a user-chosen screen
+    // edge (Einstellungen) instead of always being a bottom sheet — `adjustmentsPanel`
+    // below owns sizing/positioning/the close control; this is just the scrolling content.
 
-    private var adjustmentsSheet: some View {
+    private var adjustmentsContent: some View {
         ScrollView {
             VStack(spacing: 14) {
-                Capsule().fill(.white.opacity(0.2)).frame(width: 36, height: 4).padding(.top, 2)
-
                 PanelLegend(text: "Optik")
                 knobRow
 
@@ -374,6 +376,52 @@ struct ContentView: View {
         }
         .scrollContentBackground(.hidden)
         .tint(Brand.rose)
+    }
+
+    /// Sizes, positions and closes the panel per `settings.panelEdge` — full width capped
+    /// height for top/bottom, capped width full height for the sides, so the viewfinder
+    /// stays partially visible around it regardless of which edge someone picks. The close
+    /// button is the one reliable dismiss path on every edge; a swipe back toward the
+    /// panel's own edge is added on top for the bottom case, matching the old sheet's
+    /// familiar swipe-down.
+    private var adjustmentsPanel: some View {
+        GeometryReader { geo in
+            let edge = settings.panelEdge
+            let panelSize: CGSize = edge.isVertical
+                ? CGSize(width: min(300, geo.size.width * 0.82), height: geo.size.height)
+                : CGSize(width: geo.size.width, height: min(440, geo.size.height * 0.62))
+
+            VStack(spacing: 0) {
+                HStack {
+                    Capsule().fill(.white.opacity(0.2)).frame(width: 36, height: 4)
+                    Spacer()
+                    Button { showingAdjustments = false } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.white.opacity(0.5))
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.top, 10)
+
+                adjustmentsContent
+            }
+            .frame(width: panelSize.width, height: panelSize.height)
+            .background { FaceplateBackground(opacity: settings.panelOpacity) }
+            .clipShape(Rectangle())
+            .shadow(color: .black.opacity(0.5), radius: 14)
+            .ignoresSafeArea(edges: edge == .bottom ? .bottom : (edge == .top ? .top : []))
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: edge.alignment)
+            // Always attached (avoids an Optional-Gesture type headache) but only acts for
+            // the bottom edge, matching the old sheet's familiar swipe-down-to-dismiss; the
+            // close button above is the one dismiss path guaranteed to work on every edge.
+            .gesture(
+                DragGesture()
+                    .onEnded { drag in
+                        guard edge == .bottom, drag.translation.height > 60 else { return }
+                        showingAdjustments = false
+                    }
+            )
+        }
     }
 
     /// The core adjustment knobs, side by side — compact (a knob is a quarter the width of
