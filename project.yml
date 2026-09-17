@@ -40,6 +40,8 @@ targets:
       - sdk: PhotosUI.framework
       - sdk: MetalKit.framework
       - sdk: Metal.framework
+      - sdk: Vision.framework
+      - sdk: CoreMotion.framework
     # Belt-and-suspenders: `xcodebuild -showBuildSettings` confirms GENERATE_INFOPLIST_FILE=NO
     # and INFOPLIST_FILE=Sources/Info.plist are both correctly resolved, yet the packaged
     # Info.plist still comes out with none of our custom keys (verified twice by unzipping the

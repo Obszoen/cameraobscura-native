@@ -3,6 +3,7 @@ import CoreImage
 import CoreMotion
 import UIKit
 import Photos
+import Vision
 
 @MainActor
 final class CameraModel: NSObject, ObservableObject {
@@ -41,6 +42,21 @@ final class CameraModel: NSObject, ObservableObject {
     // positive. Read by the level-line overlay, which also decides for itself when that
     // counts as "level enough" to turn its accent color.
     @Published var rollDegrees: Double = 0
+    // Composition coach: off by default (real work for the CPU, and not everyone wants a
+    // coach) — enabled from a toolbar toggle. Analysis only runs at all while this is true.
+    @Published var showCompositionCoach = false
+    @Published var coachMode: CoachMode = .photographerMoves
+    @Published var compositionHint: String?
+    // Vision's boundingBox convention: normalized 0...1, origin bottom-left, relative to
+    // `compositionFrameSize` (the raw, undistorted capture buffer's pixel size at analysis
+    // time — deliberately the buffer BEFORE the fisheye warp, since coaching is about real
+    // framing, not the artistic distortion). The overlay needs the actual buffer size to
+    // correctly place the crosshair on screen, because the on-screen preview is a cropped
+    // "fill" of that buffer, not a 1:1 mapping.
+    @Published var personBoxNormalized: CGRect?
+    @Published var compositionFrameSize: CGSize = .zero
+
+    enum CoachMode: Hashable { case photographerMoves, subjectMoves }
 
     // Before/after review, shown after a photo capture instead of saving immediately.
     @Published var reviewOriginal: UIImage?
@@ -82,6 +98,15 @@ final class CameraModel: NSObject, ObservableObject {
     private var depthFrameCounter = 0
     private let previewFrameSkip = 2
     private let depthFrameSkip = 3
+
+    // Composition coach: Vision analysis is real CPU work, so it runs at ~2-3fps (not every
+    // frame) on its own queue, and `isAnalyzingComposition` skips scheduling a new request
+    // while one is still in flight instead of piling them up — the same drop-not-queue
+    // pattern that fixed the live preview's stale-frame backlog earlier.
+    private var coachFrameCounter = 0
+    private let coachFrameSkip = 10
+    private let visionQueue = DispatchQueue(label: "cameraobscura.vision")
+    private var isAnalyzingComposition = false
 
     // Custom recording pipeline: unlike AVCaptureMovieFileOutput, this actually bakes
     // the fisheye/look effect into the saved file, because every frame runs through
@@ -530,6 +555,32 @@ final class CameraModel: NSObject, ObservableObject {
         guard isRecording, writerSessionStarted, let input = writerAudioInput, input.isReadyForMoreMediaData else { return }
         input.append(sampleBuffer)
     }
+
+    // MARK: - Composition coach
+
+    /// Runs on the raw (undistorted) buffer, not the fisheye-warped preview — coaching is
+    /// about real-world framing, and warping a person's silhouette before measuring it
+    /// would make the geometry meaningless. `.up` is correct here (not `.right`/`.left`)
+    /// because the capture connection already delivers portrait-rotated, correctly-mirrored
+    /// buffers — the exact same orientation assumption the video-writer dimension swap
+    /// elsewhere in this file already relies on.
+    private func analyzeComposition(pixelBuffer: CVPixelBuffer) {
+        let width = CGFloat(CVPixelBufferGetWidth(pixelBuffer))
+        let height = CGFloat(CVPixelBufferGetHeight(pixelBuffer))
+        let request = VNDetectHumanRectanglesRequest()
+        let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .up, options: [:])
+        visionQueue.async { [weak self] in
+            try? handler.perform([request])
+            let box = (request.results as? [VNHumanObservation])?.first?.boundingBox
+            Task { @MainActor in
+                guard let self else { return }
+                self.isAnalyzingComposition = false
+                self.personBoxNormalized = box
+                self.compositionFrameSize = CGSize(width: width, height: height)
+                self.compositionHint = box.map { CompositionCoach.hint(for: $0, mode: self.coachMode) }
+            }
+        }
+    }
 }
 
 extension CameraModel: AVCaptureDepthDataOutputDelegate {
@@ -589,6 +640,14 @@ extension CameraModel: AVCaptureVideoDataOutputSampleBufferDelegate {
             self.latestFrame = processed
             if self.isRecording {
                 self.appendVideoFrame(processed, presentationTime: presentationTime)
+            }
+
+            if self.showCompositionCoach, !self.isAnalyzingComposition {
+                self.coachFrameCounter += 1
+                if self.coachFrameCounter % self.coachFrameSkip == 0 {
+                    self.isAnalyzingComposition = true
+                    self.analyzeComposition(pixelBuffer: pixelBuffer)
+                }
             }
         }
     }

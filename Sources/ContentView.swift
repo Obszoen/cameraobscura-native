@@ -25,6 +25,9 @@ struct ContentView: View {
             preview
             VStack {
                 topBar
+                if camera.showCompositionCoach {
+                    coachModeSwitch
+                }
                 Spacer()
                 bottomBar
             }
@@ -93,6 +96,29 @@ struct ContentView: View {
                 LevelLine(rollDegrees: camera.rollDegrees)
                     .allowsHitTesting(false)
 
+                if camera.showCompositionCoach, let box = camera.personBoxNormalized {
+                    CompositionCoachOverlay(
+                        personBox: box,
+                        target: CompositionCoach.target(for: box),
+                        bufferSize: camera.compositionFrameSize,
+                        accent: Brand.mint
+                    )
+                    .allowsHitTesting(false)
+                }
+
+                if camera.showCompositionCoach, let hint = camera.compositionHint {
+                    VStack {
+                        Spacer()
+                        Text(hint)
+                            .font(.caption.bold())
+                            .padding(.horizontal, 14).padding(.vertical, 8)
+                            .background(.black.opacity(0.6), in: Capsule())
+                            .foregroundStyle(Brand.mint)
+                        Spacer().frame(height: 150)
+                    }
+                    .allowsHitTesting(false)
+                }
+
                 if camera.isRecording {
                     VStack {
                         HStack {
@@ -146,6 +172,11 @@ struct ContentView: View {
                 showGrid.toggle()
             }
 
+            chromeButton("viewfinder", tint: camera.showCompositionCoach ? Brand.mint : .white) {
+                camera.showCompositionCoach.toggle()
+                if !camera.showCompositionCoach { camera.personBoxNormalized = nil }
+            }
+
             if camera.torchAvailable {
                 chromeButton(camera.torchOn ? "bolt.fill" : "bolt.slash",
                              tint: camera.torchOn ? Brand.skyBlue : .white) {
@@ -155,6 +186,18 @@ struct ContentView: View {
         }
         .padding(.horizontal)
         .padding(.top, 8)
+    }
+
+    /// Which side of the lens gets told to move — the same crosshair geometry serves both,
+    /// only the wording (see CompositionCoach) and, implicitly, who's expected to act change.
+    private var coachModeSwitch: some View {
+        Picker("Wer bewegt sich?", selection: $camera.coachMode) {
+            Text("Ich filme").tag(CameraModel.CoachMode.photographerMoves)
+            Text("Ich bin im Bild").tag(CameraModel.CoachMode.subjectMoves)
+        }
+        .pickerStyle(.segmented)
+        .frame(maxWidth: 260)
+        .padding(.top, 6)
     }
 
     private var bottomBar: some View {
