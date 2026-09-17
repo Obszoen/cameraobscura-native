@@ -54,9 +54,11 @@ extern "C" float4 fisheyeGrade(coreimage::sample_t s, coreimage::sampler src, fl
     float2 coordR = position + dir * shift;
     float2 coordB = position - dir * shift;
 
-    float4 cR = src.sample(coordR);
+    // coreimage::sample() is a free function, not a method on `sampler` — there is no
+    // Sampler::sample() symbol to link against, which is exactly the error this produced.
+    float4 cR = coreimage::sample(src, coordR);
     float4 cG = s;
-    float4 cB = src.sample(coordB);
+    float4 cB = coreimage::sample(src, coordB);
     float4 color = float4(cR.r, cG.g, cB.b, cG.a);
 
     float vignette = 1.0 - vignetteAmt * pow(r, 2.2) * 0.55;
