@@ -37,6 +37,11 @@ final class CameraModel: NSObject, ObservableObject {
     // input couldn't be created (in use by another app, permission revoked mid-session,
     // etc.) — so the screen can say why the preview is black instead of just staying dark.
     @Published var configurationError: String?
+    // Set while the system has taken the camera away from us (an incoming call, another
+    // app using it, Control Center's camera access, a media-services crash) — the session
+    // stops running whether we like it or not, so the screen should say why instead of
+    // just going dark with no explanation, and we resume automatically once it's ours again.
+    @Published var interruptionMessage: String?
     // Roll in degrees, 0 = level, holding the phone upright in portrait — same sign
     // convention as Apple's own Camera app: tilt the top of the phone right and this goes
     // positive. Read by the level-line overlay, which also decides for itself when that
@@ -119,6 +124,61 @@ final class CameraModel: NSObject, ObservableObject {
     private var writerSessionStarted = false
 
     var currentLook: LensLook { LensLook.all.first { $0.id == lookID } ?? LensLook.all[0] }
+
+    override init() {
+        super.init()
+        observeSessionNotifications()
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    /// A real camera app has to survive the system taking the camera away without warning
+    /// — a phone call, Control Center, another app, or (rare but real) a media-services
+    /// crash — and come back on its own once it's ours again, not just sit on a frozen
+    /// last frame forever. None of this was previously observed at all.
+    private func observeSessionNotifications() {
+        let center = NotificationCenter.default
+        center.addObserver(forName: .AVCaptureSessionWasInterrupted, object: session, queue: .main) { [weak self] note in
+            guard let self else { return }
+            let reasonValue = (note.userInfo?[AVCaptureSessionInterruptionReasonKey] as? NSNumber)?.intValue
+            let reason = reasonValue.flatMap(AVCaptureSession.InterruptionReason.init)
+            self.interruptionMessage = Self.describe(interruption: reason)
+        }
+        center.addObserver(forName: .AVCaptureSessionInterruptionEnded, object: session, queue: .main) { [weak self] _ in
+            guard let self else { return }
+            self.interruptionMessage = nil
+            // The session doesn't resume itself just because the interruption ended.
+            self.sessionQueue.async { [weak self] in
+                guard let self, !self.session.isRunning else { return }
+                self.session.startRunning()
+            }
+        }
+        center.addObserver(forName: .AVCaptureSessionRuntimeError, object: session, queue: .main) { [weak self] note in
+            guard let self else { return }
+            self.interruptionMessage = "Kamera-Fehler – versuche neu zu starten…"
+            // A media-services reset invalidates the whole session; restarting it fresh
+            // (not just calling startRunning again) is Apple's own documented recovery.
+            self.sessionQueue.async { [weak self] in
+                guard let self else { return }
+                self.configureSession()
+                self.session.startRunning()
+                DispatchQueue.main.async { self.interruptionMessage = nil }
+            }
+        }
+    }
+
+    private static func describe(interruption reason: AVCaptureSession.InterruptionReason?) -> String {
+        switch reason {
+        case .videoDeviceNotAvailableInBackground: return "Kamera pausiert im Hintergrund"
+        case .audioDeviceInUseByAnotherClient: return "Mikrofon wird von einer anderen App genutzt"
+        case .videoDeviceInUseByAnotherClient: return "Kamera wird von einer anderen App genutzt"
+        case .videoDeviceNotAvailableWithMultipleForegroundApps: return "Kamera nicht verfügbar (Split View)"
+        case .videoDeviceNotAvailableDueToSystemPressure: return "Kamera pausiert – Gerät zu heiß"
+        default: return "Kamera kurz unterbrochen…"
+        }
+    }
 
     func start() {
         configureAudioSession()

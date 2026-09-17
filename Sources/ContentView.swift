@@ -136,6 +136,18 @@ struct ContentView: View {
                         Spacer()
                     }
                 }
+
+                if let interruption = camera.interruptionMessage {
+                    ZStack {
+                        Color.black.opacity(0.55)
+                        VStack(spacing: 10) {
+                            Image(systemName: "pause.circle").font(.title).foregroundStyle(Brand.skyBlue)
+                            Text(interruption).font(.subheadline).foregroundStyle(.white).multilineTextAlignment(.center)
+                        }
+                        .padding(32)
+                    }
+                    .allowsHitTesting(false)
+                }
             }
             .contentShape(Rectangle())
             .onTapGesture { location in
