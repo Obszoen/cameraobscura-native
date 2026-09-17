@@ -1,5 +1,6 @@
 import AVFoundation
 import CoreImage
+import CoreMotion
 import UIKit
 import Photos
 
@@ -35,6 +36,11 @@ final class CameraModel: NSObject, ObservableObject {
     // input couldn't be created (in use by another app, permission revoked mid-session,
     // etc.) — so the screen can say why the preview is black instead of just staying dark.
     @Published var configurationError: String?
+    // Roll in degrees, 0 = level, holding the phone upright in portrait — same sign
+    // convention as Apple's own Camera app: tilt the top of the phone right and this goes
+    // positive. Read by the level-line overlay, which also decides for itself when that
+    // counts as "level enough" to turn its accent color.
+    @Published var rollDegrees: Double = 0
 
     // Before/after review, shown after a photo capture instead of saving immediately.
     @Published var reviewOriginal: UIImage?
@@ -49,6 +55,7 @@ final class CameraModel: NSObject, ObservableObject {
 
     private let session = AVCaptureSession()
     private let sessionQueue = DispatchQueue(label: "cameraobscura.session")
+    private let motionManager = CMMotionManager()
     private let videoOutput = AVCaptureVideoDataOutput()
     private let audioOutput = AVCaptureAudioDataOutput()
     private let photoOutput = AVCapturePhotoOutput()
@@ -94,6 +101,19 @@ final class CameraModel: NSObject, ObservableObject {
             self?.configureSession()
             self?.session.startRunning()
         }
+        startLevelUpdates()
+    }
+
+    /// Roll angle for the level-line overlay. Device orientation is always portrait here
+    /// (the capture connection is locked to it), so gravity's x/y in the device's own frame
+    /// converts directly to a roll angle without needing full attitude/reference-frame math.
+    private func startLevelUpdates() {
+        guard motionManager.isDeviceMotionAvailable else { return }
+        motionManager.deviceMotionUpdateInterval = 1.0 / 30.0
+        motionManager.startDeviceMotionUpdates(to: .main) { [weak self] motion, _ in
+            guard let self, let gravity = motion?.gravity else { return }
+            self.rollDegrees = atan2(gravity.x, -gravity.y) * 180 / .pi
+        }
     }
 
     /// Fixes audio in/out routing up front: record from the built-in mic (not whatever
@@ -116,6 +136,7 @@ final class CameraModel: NSObject, ObservableObject {
         sessionQueue.async { [weak self] in
             self?.session.stopRunning()
         }
+        motionManager.stopDeviceMotionUpdates()
     }
 
     func switchCamera() {

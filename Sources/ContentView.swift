@@ -14,6 +14,7 @@ struct ContentView: View {
     @State private var newPresetName = ""
     @State private var showingAdjustments = false
     @State private var pinchStartZoom: CGFloat?
+    @State private var showGrid = false
     @Environment(\.scenePhase) private var scenePhase
 
     enum Mode { case photo, video }
@@ -83,6 +84,15 @@ struct ContentView: View {
                     ProgressView().tint(.white)
                 }
 
+                if showGrid {
+                    GridOverlay()
+                        .stroke(.white.opacity(0.45), lineWidth: 1)
+                        .allowsHitTesting(false)
+                }
+
+                LevelLine(rollDegrees: camera.rollDegrees)
+                    .allowsHitTesting(false)
+
                 if camera.isRecording {
                     VStack {
                         HStack {
@@ -131,6 +141,10 @@ struct ContentView: View {
             .frame(maxWidth: 180)
 
             Spacer()
+
+            chromeButton("grid", tint: showGrid ? Brand.mint : .white) {
+                showGrid.toggle()
+            }
 
             if camera.torchAvailable {
                 chromeButton(camera.torchOn ? "bolt.fill" : "bolt.slash",
@@ -207,18 +221,7 @@ struct ContentView: View {
     private var adjustmentsSheet: some View {
         ScrollView {
             VStack(spacing: 18) {
-                if camera.maxZoom > camera.minZoom + 0.1 {
-                    HStack {
-                        Text("Zoom").font(.caption).foregroundStyle(.secondary)
-                        Slider(value: Binding(get: { camera.zoomFactor }, set: { camera.setZoom($0) }),
-                               in: camera.minZoom...min(camera.maxZoom, 8))
-                        Text(String(format: "%.1f×", camera.zoomFactor)).font(.caption.monospacedDigit())
-                    }
-                }
-
-                labeledSlider("Fisheye", value: $camera.fisheyeStrength)
-                labeledSlider("Farbsaum", value: $camera.chromaticAberration)
-                labeledSlider("Vignette", value: $camera.vignetteAmount)
+                knobRow
 
                 if camera.hasLiDAR {
                     Toggle("Tiefenschärfe-Warp (LiDAR)", isOn: $camera.depthEnabled)
@@ -229,7 +232,7 @@ struct ContentView: View {
 
                 lookPicker
 
-                labeledSlider("Look-Intensität", value: $camera.lookIntensity)
+                RotaryKnob(title: "Look-Intensität", value: $camera.lookIntensity, accent: Brand.mint)
 
                 presetBar
 
@@ -260,6 +263,27 @@ struct ContentView: View {
             .padding(.top, 4)
         }
         .tint(Brand.rose)
+    }
+
+    /// The core adjustment knobs, side by side — compact (a knob is a quarter the width of
+    /// a full slider row) and reads as a considered instrument panel rather than a stack of
+    /// generic form controls.
+    private var knobRow: some View {
+        HStack(spacing: 0) {
+            if camera.maxZoom > camera.minZoom + 0.1 {
+                RotaryKnob(title: "Zoom", value: Binding(
+                    get: { (camera.zoomFactor - camera.minZoom) / (min(camera.maxZoom, 8) - camera.minZoom) },
+                    set: { camera.setZoom(camera.minZoom + $0 * (min(camera.maxZoom, 8) - camera.minZoom)) }
+                ), accent: Brand.skyBlue)
+                .frame(maxWidth: .infinity)
+            }
+            RotaryKnob(title: "Fisheye", value: $camera.fisheyeStrength)
+                .frame(maxWidth: .infinity)
+            RotaryKnob(title: "Farbsaum", value: $camera.chromaticAberration, accent: Brand.mint)
+                .frame(maxWidth: .infinity)
+            RotaryKnob(title: "Vignette", value: $camera.vignetteAmount, accent: Brand.skyBlue)
+                .frame(maxWidth: .infinity)
+        }
     }
 
     /// Swatch-based look picker: each look's grade applied to a neutral gray, so the
@@ -328,14 +352,6 @@ struct ContentView: View {
                     }
                 }
             }
-        }
-    }
-
-    private func labeledSlider(_ title: String, value: Binding<Double>) -> some View {
-        HStack {
-            Text(title).font(.caption).foregroundStyle(.secondary).frame(width: 100, alignment: .leading)
-            Slider(value: value, in: 0...1).tint(Brand.rose)
-            Text("\(Int(value.wrappedValue * 100))%").font(.caption.monospacedDigit()).frame(width: 40)
         }
     }
 
