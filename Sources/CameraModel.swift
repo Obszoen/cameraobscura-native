@@ -29,6 +29,22 @@ final class CameraModel: NSObject, ObservableObject {
     @Published var recordingSeconds: Int = 0
     @Published var chromaticAberration: Double = 0.6
     @Published var vignetteAmount: Double = 0.5
+    // Real photo-editing basics — asked for directly ("richtige fotoapps haben kontraste
+    // helligkeit schärfe"), on the same 0...1 knob scale as everything else but mapped to
+    // a neutral midpoint (0.5) for brightness/contrast, since unlike fisheye/vignette these
+    // must be able to go both directions from "untouched". Sharpness starts near-off (a
+    // slider people expect to add sharpening, not remove it).
+    @Published var brightness: Double = 0.5
+    @Published var contrast: Double = 0.5
+    @Published var sharpness: Double = 0.2
+    // Rest of the baseline every pro photo app (Halide/Darkroom/VSCO/Lightroom Mobile)
+    // ships in its basic tone panel — asked for directly: "mindestens die gleichen"
+    // controls that segment has. All neutral at 0.5, same knob-center convention as
+    // brightness/contrast above.
+    @Published var saturation: Double = 0.5
+    @Published var warmth: Double = 0.5
+    @Published var highlights: Double = 0.5
+    @Published var shadows: Double = 0.5
     @Published var hasLiDAR = false
     @Published var depthEnabled = true // only has any effect where hasLiDAR is true
     @Published var proRAWAvailable = false
@@ -399,6 +415,8 @@ final class CameraModel: NSObject, ObservableObject {
     func currentSettingsAsPreset(named name: String) -> SavedPreset {
         SavedPreset(name: name, lookID: lookID, fisheyeStrength: fisheyeStrength, lookIntensity: lookIntensity,
                     chromaticAberration: chromaticAberration, vignetteAmount: vignetteAmount,
+                    brightness: brightness, contrast: contrast, saturation: saturation,
+                    warmth: warmth, highlights: highlights, shadows: shadows, sharpness: sharpness,
                     grain: grain, circleMask: circleMask, autoEnhance: autoEnhance)
     }
 
@@ -408,6 +426,13 @@ final class CameraModel: NSObject, ObservableObject {
         lookIntensity = preset.lookIntensity
         chromaticAberration = preset.chromaticAberration
         vignetteAmount = preset.vignetteAmount
+        brightness = preset.brightness
+        contrast = preset.contrast
+        saturation = preset.saturation
+        warmth = preset.warmth
+        highlights = preset.highlights
+        shadows = preset.shadows
+        sharpness = preset.sharpness
         grain = preset.grain
         circleMask = preset.circleMask
         autoEnhance = preset.autoEnhance
@@ -427,6 +452,56 @@ final class CameraModel: NSObject, ObservableObject {
             vignette: vignetteAmount,
             depthMask: depthEnabled ? latestDepthMask : nil
         )
+    }
+
+    /// The basic tone panel every pro photo app (Halide/Darkroom/VSCO/Lightroom Mobile)
+    /// ships — reported directly as missing while chromatic aberration (a film-character
+    /// detail, moved into the Look section) sat in the primary row instead. All seven
+    /// knobs share one convention: 0.5 = untouched/neutral, same as every other control in
+    /// this app, so CIColorControls/CITemperatureAndTint/CIHighlightShadowAdjust's own
+    /// (differently-centered) parameter ranges are remapped around that midpoint here
+    /// rather than fed in raw.
+    private func applyTone(to image: CIImage) -> CIImage {
+        var out = image
+
+        if abs(brightness - 0.5) > 0.003 || abs(contrast - 0.5) > 0.003 || abs(saturation - 0.5) > 0.003 {
+            let colorControls = CIFilter(name: "CIColorControls")!
+            colorControls.setValue(out, forKey: kCIInputImageKey)
+            colorControls.setValue((brightness - 0.5) * 0.7, forKey: kCIInputBrightnessKey)  // -0.35...0.35
+            colorControls.setValue(0.6 + contrast * 1.0, forKey: kCIInputContrastKey)         // 0.6...1.6
+            colorControls.setValue(saturation * 2.0, forKey: kCIInputSaturationKey)           // 0 (gray)...2.0
+            out = colorControls.outputImage ?? out
+        }
+
+        // White balance shift. NOTE: direction (does turning the knob up read as warmer or
+        // cooler?) is derived from CITemperatureAndTint's documented behavior, not verified
+        // against a live render — first real-device test should confirm and this gets
+        // flipped in one line if it reads backwards.
+        if abs(warmth - 0.5) > 0.003, let warmthFilter = CIFilter(name: "CITemperatureAndTint") {
+            warmthFilter.setValue(out, forKey: kCIInputImageKey)
+            warmthFilter.setValue(CIVector(x: 6500, y: 0), forKey: "inputNeutral")
+            let targetTemp = 6500 + (warmth - 0.5) * 6000  // 3500 (cool)...9500 (warm)
+            warmthFilter.setValue(CIVector(x: targetTemp, y: 0), forKey: "inputTargetNeutral")
+            out = warmthFilter.outputImage?.cropped(to: image.extent) ?? out
+        }
+
+        if abs(highlights - 0.5) > 0.003 || abs(shadows - 0.5) > 0.003,
+           let hsFilter = CIFilter(name: "CIHighlightShadowAdjust") {
+            hsFilter.setValue(out, forKey: kCIInputImageKey)
+            hsFilter.setValue(min(max(1.0 - (highlights - 0.5) * 1.2, 0.3), 1.4), forKey: "inputHighlightAmount")
+            hsFilter.setValue(min(max((shadows - 0.5) * 1.6, 0), 1.0), forKey: "inputShadowAmount")
+            out = hsFilter.outputImage?.cropped(to: image.extent) ?? out
+        }
+
+        if sharpness > 0.01, let sharpenFilter = CIFilter(name: "CISharpenLuminance") {
+            sharpenFilter.setValue(out, forKey: kCIInputImageKey)
+            sharpenFilter.setValue(sharpness * 1.4, forKey: kCIInputSharpnessKey)
+            // CISharpenLuminance's convolution grows the extent slightly beyond the source
+            // — crop back or the frame silently drifts out of sync with everything
+            // downstream (grain, circle mask) that assumes `image.extent`.
+            out = sharpenFilter.outputImage?.cropped(to: image.extent) ?? out
+        }
+        return out
     }
 
     private func applyGrain(to image: CIImage) -> CIImage {
@@ -459,7 +534,8 @@ final class CameraModel: NSObject, ObservableObject {
         return blend.outputImage ?? image
     }
 
-    /// Full pipeline: fisheye → look grading (blended by intensity) → auto-enhance → grain → circle mask.
+    /// Full pipeline: fisheye → look grading (blended by intensity) → brightness/contrast/
+    /// sharpness → auto-enhance → grain → circle mask.
     func process(_ input: CIImage) -> CIImage {
         var image = applyFisheye(to: input)
 
@@ -469,6 +545,8 @@ final class CameraModel: NSObject, ObservableObject {
                 kCIInputTargetImageKey: image, kCIInputTimeKey: 1 - lookIntensity,
             ])
         }
+
+        image = applyTone(to: image)
 
         if autoEnhance {
             let adjustments = image.autoAdjustmentFilters(options: [.enhance: true])

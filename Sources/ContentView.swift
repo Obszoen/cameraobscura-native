@@ -309,9 +309,24 @@ struct ContentView: View {
 
                 PanelGroove()
 
+                // The baseline every pro photo app leads with (Belichtung/Kontrast/
+                // Sättigung/Schärfe, Weißabgleich/Lichter/Schatten) — asked for directly,
+                // named "Tonwerte" rather than "Ton" so it doesn't read as the audio toggle
+                // below in "Modi".
+                PanelLegend(text: "Tonwerte")
+                toneKnobRowPrimary
+                toneKnobRowSecondary
+
+                PanelGroove()
+
                 PanelLegend(text: "Look")
                 lookPicker
-                RotaryKnob(title: "Intensität", value: $camera.lookIntensity, accent: Brand.mint)
+                HStack(spacing: 0) {
+                    RotaryKnob(title: "Intensität", value: $camera.lookIntensity, accent: Brand.mint)
+                        .frame(maxWidth: .infinity)
+                    RotaryKnob(title: "Farbsaum", value: $camera.chromaticAberration, accent: Brand.skyBlue)
+                        .frame(maxWidth: .infinity)
+                }
 
                 PanelGroove()
 
@@ -371,9 +386,34 @@ struct ContentView: View {
             }
             RotaryKnob(title: "Fisheye", value: $camera.fisheyeStrength)
                 .frame(maxWidth: .infinity)
-            RotaryKnob(title: "Farbsaum", value: $camera.chromaticAberration, accent: Brand.mint)
-                .frame(maxWidth: .infinity)
             RotaryKnob(title: "Vignette", value: $camera.vignetteAmount, accent: Brand.skyBlue)
+                .frame(maxWidth: .infinity)
+        }
+    }
+
+    /// Belichtung/Kontrast/Sättigung/Schärfe — the four controls virtually every photo
+    /// app's basic panel leads with.
+    private var toneKnobRowPrimary: some View {
+        HStack(spacing: 0) {
+            RotaryKnob(title: "Helligkeit", value: $camera.brightness)
+                .frame(maxWidth: .infinity)
+            RotaryKnob(title: "Kontrast", value: $camera.contrast, accent: Brand.mint)
+                .frame(maxWidth: .infinity)
+            RotaryKnob(title: "Sättigung", value: $camera.saturation, accent: Brand.skyBlue)
+                .frame(maxWidth: .infinity)
+            RotaryKnob(title: "Schärfe", value: $camera.sharpness, accent: Brand.rose)
+                .frame(maxWidth: .infinity)
+        }
+    }
+
+    /// Weißabgleich/Lichter/Schatten — the second tier most apps tuck one tap deeper.
+    private var toneKnobRowSecondary: some View {
+        HStack(spacing: 0) {
+            RotaryKnob(title: "Wärme", value: $camera.warmth, accent: Brand.mint)
+                .frame(maxWidth: .infinity)
+            RotaryKnob(title: "Lichter", value: $camera.highlights, accent: Brand.skyBlue)
+                .frame(maxWidth: .infinity)
+            RotaryKnob(title: "Schatten", value: $camera.shadows)
                 .frame(maxWidth: .infinity)
         }
     }
