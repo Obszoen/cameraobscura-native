@@ -13,6 +13,7 @@ struct ContentView: View {
     @State private var showingSavePresetAlert = false
     @State private var newPresetName = ""
     @State private var showingAdjustments = false
+    @State private var pinchStartZoom: CGFloat?
     @Environment(\.scenePhase) private var scenePhase
 
     enum Mode { case photo, video }
@@ -99,6 +100,17 @@ struct ContentView: View {
                 let normalized = CGPoint(x: location.x / geo.size.width, y: location.y / geo.size.height)
                 camera.focusAndExpose(at: normalized)
             }
+            // Pinch-to-zoom, the gesture every camera app trains people to expect — the
+            // slider in the tune sheet is a precise fallback, not the primary control.
+            .gesture(
+                MagnificationGesture()
+                    .onChanged { scale in
+                        let base = pinchStartZoom ?? camera.zoomFactor
+                        if pinchStartZoom == nil { pinchStartZoom = base }
+                        camera.setZoom(base * scale)
+                    }
+                    .onEnded { _ in pinchStartZoom = nil }
+            )
         }
         .ignoresSafeArea()
     }
@@ -117,7 +129,8 @@ struct ContentView: View {
             Spacer()
 
             if camera.torchAvailable {
-                chromeButton(camera.torchOn ? "bolt.fill" : "bolt.slash") {
+                chromeButton(camera.torchOn ? "bolt.fill" : "bolt.slash",
+                             tint: camera.torchOn ? Brand.skyBlue : .white) {
                     camera.setTorch(!camera.torchOn)
                 }
             }
@@ -139,7 +152,7 @@ struct ContentView: View {
                 chromeButton("slider.horizontal.3") { showingAdjustments = true }
                     .overlay(alignment: .topTrailing) {
                         if camera.lookID != "none" || camera.fisheyeStrength > 0.01 {
-                            Circle().fill(.pink).frame(width: 8, height: 8).offset(x: 2, y: -2)
+                            Circle().fill(Brand.rose).frame(width: 8, height: 8).offset(x: 2, y: -2)
                         }
                     }
 
@@ -154,11 +167,11 @@ struct ContentView: View {
         .padding(.bottom, 18)
     }
 
-    private func chromeButton(_ systemImage: String, action: @escaping () -> Void) -> some View {
+    private func chromeButton(_ systemImage: String, tint: Color = .white, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
                 .font(.title3)
-                .foregroundStyle(.white)
+                .foregroundStyle(tint)
                 .frame(width: 44, height: 44)
                 .background(.black.opacity(0.35), in: Circle())
         }
@@ -173,7 +186,7 @@ struct ContentView: View {
             }
         } label: {
             ZStack {
-                Circle().stroke(.white, lineWidth: 4).frame(width: 72, height: 72)
+                Circle().stroke(Brand.rose, lineWidth: 4).frame(width: 72, height: 72)
                 if mode == .video && camera.isRecording {
                     RoundedRectangle(cornerRadius: 6).fill(.red).frame(width: 28, height: 28)
                 } else {
@@ -206,7 +219,7 @@ struct ContentView: View {
                 if camera.hasLiDAR {
                     Toggle("Tiefenschärfe-Warp (LiDAR)", isOn: $camera.depthEnabled)
                         .toggleStyle(.switch)
-                        .tint(.pink)
+                        .tint(Brand.rose)
                         .font(.caption)
                 }
 
@@ -224,7 +237,7 @@ struct ContentView: View {
                 if camera.proRAWAvailable && mode == .photo {
                     Toggle("ProRAW", isOn: $camera.proRAWEnabled)
                         .toggleStyle(.switch)
-                        .tint(.pink)
+                        .tint(Brand.mint)
                         .font(.caption)
                 }
 
@@ -240,13 +253,14 @@ struct ContentView: View {
                     }
                 }
                 .font(.caption)
-                .tint(.pink)
+                .tint(Brand.mint)
 
                 FeedbackBox()
             }
             .padding()
             .padding(.top, 4)
         }
+        .tint(Brand.rose)
     }
 
     private var presetBar: some View {
@@ -258,8 +272,8 @@ struct ContentView: View {
                     Label("Speichern", systemImage: "plus.circle.fill")
                         .font(.caption.bold())
                         .padding(.horizontal, 12).padding(.vertical, 8)
-                        .background(Color.pink.opacity(0.25))
-                        .foregroundStyle(.pink)
+                        .background(Brand.rose.opacity(0.25))
+                        .foregroundStyle(Brand.rose)
                         .clipShape(Capsule())
                 }
                 ForEach(presetStore.presets) { preset in
@@ -269,7 +283,8 @@ struct ContentView: View {
                         Text(preset.name)
                             .font(.caption.bold())
                             .padding(.horizontal, 12).padding(.vertical, 8)
-                            .background(Color.primary.opacity(0.1))
+                            .background(Brand.mint.opacity(0.18))
+                            .foregroundStyle(Brand.mint)
                             .clipShape(Capsule())
                     }
                     .contextMenu {

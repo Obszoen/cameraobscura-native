@@ -48,7 +48,13 @@ struct BeforeAfterView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 14))
                 .padding()
 
-                Picker("Export", selection: $exportPreset) {
+                Text("Gespeichert wird immer die bearbeitete Version — die Auswahl unten ist nur die Ausgabegröße.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+
+                Picker("Ausgabegröße", selection: $exportPreset) {
                     ForEach(ExportPreset.allCases) { preset in
                         Text(preset.label).tag(preset)
                     }
@@ -71,7 +77,7 @@ struct BeforeAfterView: View {
                         Label("Behalten", systemImage: "checkmark")
                             .frame(maxWidth: .infinity).padding()
                     }
-                    .background(.pink).foregroundStyle(.white).clipShape(RoundedRectangle(cornerRadius: 12))
+                    .background(Brand.rose).foregroundStyle(.white).clipShape(RoundedRectangle(cornerRadius: 12))
                 }
                 .padding(.horizontal)
                 .padding(.bottom)

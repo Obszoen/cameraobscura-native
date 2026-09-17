@@ -118,7 +118,12 @@ final class CameraModel: NSObject, ObservableObject {
 
     private func configureSession() {
         session.beginConfiguration()
-        session.sessionPreset = .hd1920x1080
+        // .hd1920x1080 caps the active device format at 1080p-video-oriented, which also
+        // caps AVCapturePhotoOutput's still resolution — that's the whole session, photos
+        // included, running well below what the sensor (and the stock Camera app) delivers.
+        // .photo selects the highest-resolution still-photo format the device offers while
+        // still supporting video capture, matching what a real camera app actually uses.
+        session.sessionPreset = .photo
         session.inputs.forEach { session.removeInput($0) }
         session.outputs.forEach { session.removeOutput($0) }
 
@@ -358,14 +363,19 @@ final class CameraModel: NSObject, ObservableObject {
 
         guard let writer = try? AVAssetWriter(outputURL: url, fileType: .mov) else { return }
 
-        // 1080×1920, not 1920×1080: the capture connection is locked to .portrait, which
-        // means AVFoundation delivers already-rotated portrait pixel buffers — writer
-        // dimensions that don't match what's actually appended would silently drop frames
-        // or squash the video.
+        // Read the real active format instead of hardcoding 1080×1920: with the session on
+        // .photo (for full-resolution stills) the delivered frames are the device's actual
+        // sensor size, not 1080p, and that varies by device/lens. Swapped width/height
+        // because the capture connection is locked to .portrait, so AVFoundation delivers
+        // already-rotated portrait pixel buffers — writer dimensions that don't match what's
+        // actually appended would silently crop the video to the top-left corner.
+        let sensorDims = currentDevice?.activeFormat.formatDescription.dimensions
+        let portraitWidth = Int(sensorDims?.height ?? 1080)
+        let portraitHeight = Int(sensorDims?.width ?? 1920)
         let videoSettings: [String: Any] = [
             AVVideoCodecKey: AVVideoCodecType.h264,
-            AVVideoWidthKey: 1080,
-            AVVideoHeightKey: 1920,
+            AVVideoWidthKey: portraitWidth,
+            AVVideoHeightKey: portraitHeight,
         ]
         let videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
         videoInput.expectsMediaDataInRealTime = true
@@ -514,10 +524,22 @@ extension CameraModel: AVCaptureVideoDataOutputSampleBufferDelegate {
             }
             let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
             let processed = self.process(ciImage)
-            guard let cgImage = self.context.createCGImage(processed, from: processed.extent) else { return }
-            self.previewImage = UIImage(cgImage: cgImage)
             if self.isRecording {
                 self.appendVideoFrame(processed, presentationTime: presentationTime)
+            }
+            // The on-screen preview render is the expensive part — an actual GPU pass that
+            // rasterizes the whole filter chain into a CGImage — and it doesn't need to
+            // block anything. Running it inline here (as this used to) serialized every
+            // single camera frame behind the main actor's queue: a backlog of stale frames
+            // built up faster than they could be rendered, which is exactly why the preview
+            // looked frozen and slider/look changes appeared to do nothing — they were
+            // applied, just buried under seconds of queued-up old frames.
+            let context = self.context
+            let extent = processed.extent
+            Task.detached(priority: .userInitiated) {
+                guard let cgImage = context.createCGImage(processed, from: extent) else { return }
+                let image = UIImage(cgImage: cgImage)
+                await MainActor.run { self.previewImage = image }
             }
         }
     }

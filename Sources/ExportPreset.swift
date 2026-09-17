@@ -9,7 +9,7 @@ enum ExportPreset: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .original: return "Original (verlustfrei)"
+        case .original: return "Originalgröße (verlustfrei)"
         case .story: return "Story (9:16, Sicherheitszone)"
         case .print: return "Print (hohe Auflösung, sRGB)"
         }
