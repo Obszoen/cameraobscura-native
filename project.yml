@@ -13,6 +13,11 @@ targets:
       path: Sources/Info.plist
     settings:
       base:
+        # Without this, Xcode 16's default project format auto-generates Info.plist and
+        # silently ignores `info.path` below — the app then ships with none of our privacy
+        # usage descriptions and gets TCC-killed (SIGABRT) the instant it touches the camera.
+        # Confirmed by unzipping a built .ipa: its Info.plist had zero of our custom keys.
+        GENERATE_INFOPLIST_FILE: NO
         PRODUCT_BUNDLE_IDENTIFIER: com.danielschweiger.cameraobscura
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1"
