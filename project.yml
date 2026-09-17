@@ -21,42 +21,17 @@ targets:
         CODE_SIGNING_ALLOWED: NO
         DEVELOPMENT_TEAM: ""
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        # Empty on purpose (no applesignin key): the free/personal-team signing tier used
-        # for sideloading cannot issue the com.apple.developer.applesignin entitlement at
-        # all, and requesting it silently breaks the on-device install with no error
-        # anywhere in the transfer log. But an entirely MISSING entitlements file breaks
-        # AltServer-Linux's own signing step ("Error parsing entitlements") — so it needs
-        # to exist and just be empty, not be absent. Add applesignin back here once on the
-        # paid Apple Developer Program.
         CODE_SIGN_ENTITLEMENTS: Sources/CameraObscura.entitlements
     dependencies:
       - sdk: AVFoundation.framework
       - sdk: CoreImage.framework
       - sdk: Photos.framework
       - sdk: PhotosUI.framework
-      - target: PhotoEditingExtension
-        embed: true
-
-  PhotoEditingExtension:
-    type: app-extension
-    platform: iOS
-    sources:
-      - path: PhotoEditingExtension
-      - path: Sources/LensLook.swift
-      - path: Sources/FisheyeFilter.swift
-    info:
-      path: PhotoEditingExtension/Info.plist
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.danielschweiger.cameraobscura.photoedit
-        SWIFT_VERSION: "5.0"
-        TARGETED_DEVICE_FAMILY: "1"
-        CODE_SIGN_STYLE: Manual
-        CODE_SIGNING_REQUIRED: NO
-        CODE_SIGNING_ALLOWED: NO
-        DEVELOPMENT_TEAM: ""
-        CODE_SIGN_ENTITLEMENTS: PhotoEditingExtension/PhotoEditingExtension.entitlements
-    dependencies:
-      - sdk: CoreImage.framework
-      - sdk: Photos.framework
-      - sdk: PhotosUI.framework
+    # PhotoEditingExtension target temporarily removed: sideloading via the free/personal
+    # signing tier consistently stalled at "Finished writing to device" (75%) whenever an
+    # embedded app extension was present — the on-device installer never completed for the
+    # combined bundle. Dropping the extension isolates the variable so the core camera app
+    # can actually ship today; the extension's source is untouched under PhotoEditingExtension/
+    # and Sources/LensLook.swift + FisheyeFilter.swift, ready to re-add to this file once
+    # there's time to debug that specific failure properly (or once on a paid account, which
+    # uses a completely different, non-fragile install path via TestFlight/Xcode).
