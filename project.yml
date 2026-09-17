@@ -1,0 +1,55 @@
+name: CameraObscura
+options:
+  bundleIdPrefix: com.danielschweiger
+  deploymentTarget:
+    iOS: "16.0"
+targets:
+  CameraObscura:
+    type: application
+    platform: iOS
+    sources:
+      - Sources
+    info:
+      path: Sources/Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.danielschweiger.cameraobscura
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGNING_REQUIRED: NO
+        CODE_SIGNING_ALLOWED: NO
+        DEVELOPMENT_TEAM: ""
+        CODE_SIGN_ENTITLEMENTS: Sources/CameraObscura.entitlements
+    dependencies:
+      - sdk: AVFoundation.framework
+      - sdk: CoreImage.framework
+      - sdk: Photos.framework
+      - sdk: PhotosUI.framework
+      - sdk: AuthenticationServices.framework
+      - target: PhotoEditingExtension
+        embed: true
+
+  PhotoEditingExtension:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: PhotoEditingExtension
+      - path: Sources/LensLook.swift
+      - path: Sources/FisheyeFilter.swift
+      - path: Sources/FisheyeKernels.metal
+    info:
+      path: PhotoEditingExtension/Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.danielschweiger.cameraobscura.photoedit
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGNING_REQUIRED: NO
+        CODE_SIGNING_ALLOWED: NO
+        DEVELOPMENT_TEAM: ""
+    dependencies:
+      - sdk: CoreImage.framework
+      - sdk: Photos.framework
+      - sdk: PhotosUI.framework
