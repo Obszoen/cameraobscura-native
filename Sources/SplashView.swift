@@ -1,79 +1,80 @@
 import SwiftUI
 
-/// Branded animated intro shown for ~2s after the (necessarily static) system launch
-/// screen. Soft pink ground, mint + blue stripes drifting diagonally in both directions
-/// for a floating, cozy-artsy feel — not a system launch screen (Apple doesn't allow those
-/// to animate), just the first thing the app itself shows.
+/// Branded intro shown for ~1.6s after the (necessarily static) system launch screen.
+/// Dark ground, a simple gentle fade/scale-in on the camera mark — no drifting stripe
+/// animation, no social handle overlay. The feedback channel lives in ContentView's
+/// FeedbackBox, where it belongs, not stamped across the first thing people see.
 struct SplashView: View {
-    @State private var drift = false
+    @State private var appeared = false
     let onFinished: () -> Void
 
-    private let pink = Color(red: 0.98, green: 0.85, blue: 0.90)
-    private let mint = Color(red: 0.65, green: 0.92, blue: 0.82)
-    private let blue = Color(red: 0.68, green: 0.82, blue: 0.98)
+    private let ground = Color(red: 0x13 / 255, green: 0x11 / 255, blue: 0x13 / 255)
+    private let bodyColor = Color(red: 0xF5 / 255, green: 0xF1 / 255, blue: 0xEC / 255)
+    private let accent = Color(red: 0x4C / 255, green: 0x7E / 255, blue: 0xFF / 255)
 
     var body: some View {
-        GeometryReader { geo in
-            let d = max(geo.size.width, geo.size.height) * 1.6
-            ZStack {
-                pink.ignoresSafeArea()
-
-                // Mint stripes drifting one way, blue stripes drifting the other —
-                // opposing motion is what reads as "floating" rather than "sliding".
-                StripeField(color: mint, stripeWidth: 26, spacing: 70, angle: 35)
-                    .offset(x: drift ? d * 0.12 : -d * 0.12, y: drift ? -d * 0.08 : d * 0.08)
-                    .opacity(0.55)
-                StripeField(color: blue, stripeWidth: 20, spacing: 84, angle: -35)
-                    .offset(x: drift ? -d * 0.10 : d * 0.10, y: drift ? d * 0.10 : -d * 0.10)
-                    .opacity(0.5)
-
-                VStack(spacing: 6) {
-                    Text("CameraObscura")
-                        .font(.system(size: 40, weight: .heavy, design: .rounded))
-                        .foregroundStyle(.black)
-                        .tracking(0.5)
-                }
+        ZStack {
+            ground.ignoresSafeArea()
+            VStack(spacing: 26) {
+                CameraMark(bodyColor: bodyColor, accent: accent, ground: ground)
+                    .frame(width: 132, height: 132)
+                Text("CameraObscura")
+                    .font(.system(size: 32, weight: .medium, design: .serif))
+                    .italic()
+                    .foregroundStyle(bodyColor)
             }
-            .overlay(alignment: .bottomTrailing) {
-                Link(destination: URL(string: "https://instagram.com/Obszoen_official")!) {
-                    Text("programmed by Obszoen_official")
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.black.opacity(0.55))
-                }
-                .padding(.trailing, 16)
-                .padding(.bottom, 14)
-            }
+            .scaleEffect(appeared ? 1 : 0.92)
+            .opacity(appeared ? 1 : 0)
         }
         .onAppear {
-            withAnimation(.easeInOut(duration: 3.4).repeatForever(autoreverses: true)) {
-                drift = true
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { onFinished() }
+            withAnimation(.easeOut(duration: 0.5)) { appeared = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { onFinished() }
         }
     }
 }
 
-/// A field of diagonal stripes, big enough that rotating/offsetting it never shows an edge.
-private struct StripeField: View {
-    let color: Color
-    let stripeWidth: CGFloat
-    let spacing: CGFloat
-    let angle: Double
+/// The brand mark: a camera body with a big lens deliberately breaking the top edge —
+/// the "even a single-lens phone gets a big wide lens now" idea in one shape. Same
+/// composition (and the same 1024-unit coordinate space) as the app icon artwork so the
+/// two always read as the same brand.
+struct CameraMark: View {
+    let bodyColor: Color
+    let accent: Color
+    let ground: Color
 
     var body: some View {
         GeometryReader { geo in
-            let d = max(geo.size.width, geo.size.height) * 2
-            let count = Int(d / spacing) + 4
+            let s = geo.size.width / 1024
             ZStack {
-                ForEach(0..<count, id: \.self) { i in
-                    color
-                        .frame(width: stripeWidth, height: d)
-                        .offset(x: CGFloat(i) * spacing - d / 2)
-                }
+                RoundedRectangle(cornerRadius: 18 * s)
+                    .fill(bodyColor)
+                    .frame(width: 150 * s, height: 76 * s)
+                    .position(x: 285 * s, y: 322 * s)
+                RoundedRectangle(cornerRadius: 64 * s)
+                    .fill(bodyColor)
+                    .frame(width: 744 * s, height: 390 * s)
+                    .position(x: 512 * s, y: 545 * s)
+                Circle()
+                    .fill(ground)
+                    .frame(width: 460 * s, height: 460 * s)
+                    .position(x: 512 * s, y: 440 * s)
+                Circle()
+                    .stroke(accent, lineWidth: 14 * s)
+                    .frame(width: 460 * s, height: 460 * s)
+                    .position(x: 512 * s, y: 440 * s)
+                Circle()
+                    .stroke(accent.opacity(0.55), lineWidth: 10 * s)
+                    .frame(width: 336 * s, height: 336 * s)
+                    .position(x: 512 * s, y: 440 * s)
+                Circle()
+                    .fill(accent)
+                    .frame(width: 236 * s, height: 236 * s)
+                    .position(x: 512 * s, y: 440 * s)
+                Circle()
+                    .fill(bodyColor.opacity(0.85))
+                    .frame(width: 48 * s, height: 48 * s)
+                    .position(x: 466 * s, y: 394 * s)
             }
-            .frame(width: d, height: d)
-            .rotationEffect(.degrees(angle))
-            .position(x: geo.size.width / 2, y: geo.size.height / 2)
         }
     }
 }

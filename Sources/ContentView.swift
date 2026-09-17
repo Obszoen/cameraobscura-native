@@ -1,11 +1,18 @@
 import SwiftUI
 
+/// Full-screen viewfinder with a slim always-visible bottom bar (mode, shutter, flip,
+/// tune) — the standard layout every camera app on the App Store uses — instead of a
+/// boxed preview stacked above a permanently-expanded wall of sliders. The sliders/looks/
+/// presets live in a native resizable sheet (drag handle, half/full height, swipe to
+/// dismiss) opened from the "Tune" button, so the viewfinder always fits the screen and
+/// nothing is ever clipped off the bottom on any device size.
 struct ContentView: View {
     @StateObject private var camera = CameraModel()
     @StateObject private var presetStore = PresetStore()
     @State private var mode: Mode = .photo
     @State private var showingSavePresetAlert = false
     @State private var newPresetName = ""
+    @State private var showingAdjustments = false
     @Environment(\.scenePhase) private var scenePhase
 
     enum Mode { case photo, video }
@@ -13,9 +20,11 @@ struct ContentView: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            VStack(spacing: 0) {
-                preview
-                controls
+            preview
+            VStack {
+                topBar
+                Spacer()
+                bottomBar
             }
         }
         .onAppear { camera.start() }
@@ -36,6 +45,11 @@ struct ContentView: View {
         )) {
             BeforeAfterView(camera: camera)
         }
+        .sheet(isPresented: $showingAdjustments) {
+            adjustmentsSheet
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
         .alert("Preset speichern", isPresented: $showingSavePresetAlert) {
             TextField("Name", text: $newPresetName)
             Button("Speichern") {
@@ -47,6 +61,8 @@ struct ContentView: View {
         }
         .preferredColorScheme(.dark)
     }
+
+    // MARK: - Full-screen viewfinder
 
     private var preview: some View {
         GeometryReader { geo in
@@ -72,7 +88,8 @@ struct ContentView: View {
                                 .background(.black.opacity(0.55), in: Capsule())
                             Spacer()
                         }
-                        .padding()
+                        .padding(.top, 60)
+                        .padding(.horizontal)
                         Spacer()
                     }
                 }
@@ -83,101 +100,68 @@ struct ContentView: View {
                 camera.focusAndExpose(at: normalized)
             }
         }
-        .aspectRatio(3.0/4.0, contentMode: .fit)
-        .background(Color.black)
+        .ignoresSafeArea()
     }
 
-    private var controls: some View {
+    // MARK: - Always-visible chrome
+
+    private var topBar: some View {
+        HStack {
+            Picker("Modus", selection: $mode) {
+                Text("Foto").tag(Mode.photo)
+                Text("Video").tag(Mode.video)
+            }
+            .pickerStyle(.segmented)
+            .frame(maxWidth: 180)
+
+            Spacer()
+
+            if camera.torchAvailable {
+                chromeButton(camera.torchOn ? "bolt.fill" : "bolt.slash") {
+                    camera.setTorch(!camera.torchOn)
+                }
+            }
+        }
+        .padding(.horizontal)
+        .padding(.top, 8)
+    }
+
+    private var bottomBar: some View {
         VStack(spacing: 14) {
-            HStack {
-                Picker("Modus", selection: $mode) {
-                    Text("Foto").tag(Mode.photo)
-                    Text("Video").tag(Mode.video)
-                }
-                .pickerStyle(.segmented)
-                .frame(maxWidth: 200)
-
-                Spacer()
-
-                Button { camera.switchCamera() } label: {
-                    Image(systemName: "arrow.triangle.2.circlepath.camera")
-                }
-                if camera.torchAvailable {
-                    Button { camera.setTorch(!camera.torchOn) } label: {
-                        Image(systemName: camera.torchOn ? "bolt.fill" : "bolt.slash")
-                    }
-                }
-            }
-            .font(.title3)
-            .foregroundStyle(.white)
-
-            if camera.maxZoom > camera.minZoom + 0.1 {
-                HStack {
-                    Text("Zoom").font(.caption).foregroundStyle(.white.opacity(0.7))
-                    Slider(value: Binding(get: { camera.zoomFactor }, set: { camera.setZoom($0) }),
-                           in: camera.minZoom...min(camera.maxZoom, 8))
-                    Text(String(format: "%.1f×", camera.zoomFactor)).font(.caption.monospacedDigit()).foregroundStyle(.white)
-                }
-            }
-
-            labeledSlider("Fisheye", value: $camera.fisheyeStrength)
-            labeledSlider("Farbsaum", value: $camera.chromaticAberration)
-            labeledSlider("Vignette", value: $camera.vignetteAmount)
-
-            if camera.hasLiDAR {
-                Toggle("Tiefenschärfe-Warp (LiDAR)", isOn: $camera.depthEnabled)
-                    .toggleStyle(.switch)
-                    .tint(.pink)
-                    .font(.caption)
-                    .foregroundStyle(.white)
-            }
-
-            Picker("Look", selection: $camera.lookID) {
-                ForEach(LensLook.all) { look in
-                    Text(look.name).tag(look.id)
-                }
-            }
-            .pickerStyle(.menu)
-            .tint(.white)
-
-            labeledSlider("Look-Intensität", value: $camera.lookIntensity)
-
-            presetBar
-
-            if camera.proRAWAvailable && mode == .photo {
-                Toggle("ProRAW", isOn: $camera.proRAWEnabled)
-                    .toggleStyle(.switch)
-                    .tint(.pink)
-                    .font(.caption)
-                    .foregroundStyle(.white)
-            }
-
-            HStack(spacing: 18) {
-                Toggle("Auto", isOn: $camera.autoEnhance).toggleStyle(.button)
-                Toggle("Rund", isOn: $camera.circleMask).toggleStyle(.button)
-                Toggle("Korn", isOn: $camera.grain).toggleStyle(.button)
-                if mode == .photo {
-                    Toggle("Live", isOn: $camera.livePhotoEnabled).toggleStyle(.button)
-                } else {
-                    Toggle("Ton", isOn: $camera.audioEnabled).toggleStyle(.button)
-                        .disabled(camera.isRecording)
-                }
-            }
-            .font(.caption)
-            .tint(.pink)
-
-            captureButton
-
             if let ok = camera.lastSaveOK {
                 Text(ok ? "In Fotos gespeichert ✓" : "Speichern fehlgeschlagen")
                     .font(.caption)
                     .foregroundStyle(ok ? .green : .red)
+                    .padding(.horizontal, 10).padding(.vertical, 4)
+                    .background(.black.opacity(0.55), in: Capsule())
             }
+            HStack {
+                chromeButton("slider.horizontal.3") { showingAdjustments = true }
+                    .overlay(alignment: .topTrailing) {
+                        if camera.lookID != "none" || camera.fisheyeStrength > 0.01 {
+                            Circle().fill(.pink).frame(width: 8, height: 8).offset(x: 2, y: -2)
+                        }
+                    }
 
-            FeedbackBox()
+                Spacer()
+                captureButton
+                Spacer()
+
+                chromeButton("arrow.triangle.2.circlepath.camera") { camera.switchCamera() }
+            }
+            .padding(.horizontal, 28)
         }
-        .padding()
-        .background(Color(white: 0.08))
+        .padding(.bottom, 18)
+    }
+
+    private func chromeButton(_ systemImage: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.title3)
+                .foregroundStyle(.white)
+                .frame(width: 44, height: 44)
+                .background(.black.opacity(0.35), in: Circle())
+        }
     }
 
     private var captureButton: some View {
@@ -197,7 +181,72 @@ struct ContentView: View {
                 }
             }
         }
-        .frame(maxWidth: .infinity)
+    }
+
+    // MARK: - Adjustments sheet (fisheye/look/presets) — everything that used to be a
+    // permanently-stacked wall of controls now lives here, scrollable and dismissible,
+    // so it never clips regardless of screen size.
+
+    private var adjustmentsSheet: some View {
+        ScrollView {
+            VStack(spacing: 18) {
+                if camera.maxZoom > camera.minZoom + 0.1 {
+                    HStack {
+                        Text("Zoom").font(.caption).foregroundStyle(.secondary)
+                        Slider(value: Binding(get: { camera.zoomFactor }, set: { camera.setZoom($0) }),
+                               in: camera.minZoom...min(camera.maxZoom, 8))
+                        Text(String(format: "%.1f×", camera.zoomFactor)).font(.caption.monospacedDigit())
+                    }
+                }
+
+                labeledSlider("Fisheye", value: $camera.fisheyeStrength)
+                labeledSlider("Farbsaum", value: $camera.chromaticAberration)
+                labeledSlider("Vignette", value: $camera.vignetteAmount)
+
+                if camera.hasLiDAR {
+                    Toggle("Tiefenschärfe-Warp (LiDAR)", isOn: $camera.depthEnabled)
+                        .toggleStyle(.switch)
+                        .tint(.pink)
+                        .font(.caption)
+                }
+
+                Picker("Look", selection: $camera.lookID) {
+                    ForEach(LensLook.all) { look in
+                        Text(look.name).tag(look.id)
+                    }
+                }
+                .pickerStyle(.menu)
+
+                labeledSlider("Look-Intensität", value: $camera.lookIntensity)
+
+                presetBar
+
+                if camera.proRAWAvailable && mode == .photo {
+                    Toggle("ProRAW", isOn: $camera.proRAWEnabled)
+                        .toggleStyle(.switch)
+                        .tint(.pink)
+                        .font(.caption)
+                }
+
+                HStack(spacing: 18) {
+                    Toggle("Auto", isOn: $camera.autoEnhance).toggleStyle(.button)
+                    Toggle("Rund", isOn: $camera.circleMask).toggleStyle(.button)
+                    Toggle("Korn", isOn: $camera.grain).toggleStyle(.button)
+                    if mode == .photo {
+                        Toggle("Live", isOn: $camera.livePhotoEnabled).toggleStyle(.button)
+                    } else {
+                        Toggle("Ton", isOn: $camera.audioEnabled).toggleStyle(.button)
+                            .disabled(camera.isRecording)
+                    }
+                }
+                .font(.caption)
+                .tint(.pink)
+
+                FeedbackBox()
+            }
+            .padding()
+            .padding(.top, 4)
+        }
     }
 
     private var presetBar: some View {
@@ -220,8 +269,7 @@ struct ContentView: View {
                         Text(preset.name)
                             .font(.caption.bold())
                             .padding(.horizontal, 12).padding(.vertical, 8)
-                            .background(Color.white.opacity(0.12))
-                            .foregroundStyle(.white)
+                            .background(Color.primary.opacity(0.1))
                             .clipShape(Capsule())
                     }
                     .contextMenu {
@@ -238,9 +286,9 @@ struct ContentView: View {
 
     private func labeledSlider(_ title: String, value: Binding<Double>) -> some View {
         HStack {
-            Text(title).font(.caption).foregroundStyle(.white.opacity(0.7)).frame(width: 100, alignment: .leading)
+            Text(title).font(.caption).foregroundStyle(.secondary).frame(width: 100, alignment: .leading)
             Slider(value: value, in: 0...1)
-            Text("\(Int(value.wrappedValue * 100))%").font(.caption.monospacedDigit()).foregroundStyle(.white).frame(width: 40)
+            Text("\(Int(value.wrappedValue * 100))%").font(.caption.monospacedDigit()).frame(width: 40)
         }
     }
 
