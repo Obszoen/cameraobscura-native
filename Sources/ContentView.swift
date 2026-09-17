@@ -74,6 +74,13 @@ struct ContentView: View {
                         .scaledToFill()
                         .frame(width: geo.size.width, height: geo.size.height)
                         .clipped()
+                } else if let error = camera.configurationError {
+                    Color.black
+                    VStack(spacing: 10) {
+                        Image(systemName: "exclamationmark.triangle").font(.title).foregroundStyle(Brand.rose)
+                        Text(error).font(.subheadline).foregroundStyle(.white).multilineTextAlignment(.center)
+                    }
+                    .padding(32)
                 } else {
                     Color.black
                     ProgressView().tint(.white)
@@ -223,12 +230,7 @@ struct ContentView: View {
                         .font(.caption)
                 }
 
-                Picker("Look", selection: $camera.lookID) {
-                    ForEach(LensLook.all) { look in
-                        Text(look.name).tag(look.id)
-                    }
-                }
-                .pickerStyle(.menu)
+                lookPicker
 
                 labeledSlider("Look-Intensität", value: $camera.lookIntensity)
 
@@ -261,6 +263,39 @@ struct ContentView: View {
             .padding(.top, 4)
         }
         .tint(Brand.rose)
+    }
+
+    /// Swatch-based look picker: each look's grade applied to a neutral gray, so the
+    /// color character is visible at a glance instead of reading names off a menu.
+    private var lookPicker: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(LensLook.all) { look in
+                        Button {
+                            camera.lookID = look.id
+                        } label: {
+                            Circle()
+                                .fill(look.previewColor)
+                                .frame(width: 40, height: 40)
+                                .overlay(
+                                    Circle().stroke(Brand.rose, lineWidth: camera.lookID == look.id ? 3 : 0)
+                                )
+                                .overlay(
+                                    Circle().stroke(.white.opacity(0.25), lineWidth: 1)
+                                )
+                        }
+                    }
+                }
+                .padding(.horizontal, 2)
+                .padding(.vertical, 4)
+            }
+            if let current = LensLook.all.first(where: { $0.id == camera.lookID }) {
+                Text("\(current.name) · \(current.subtitle)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 
     private var presetBar: some View {

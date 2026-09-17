@@ -29,6 +29,10 @@ final class CameraModel: NSObject, ObservableObject {
     @Published var depthEnabled = true // only has any effect where hasLiDAR is true
     @Published var proRAWAvailable = false
     @Published var proRAWEnabled = false
+    // Set whenever configureSession() can't get a usable camera — no device found, or the
+    // input couldn't be created (in use by another app, permission revoked mid-session,
+    // etc.) — so the screen can say why the preview is black instead of just staying dark.
+    @Published var configurationError: String?
 
     // Before/after review, shown after a photo capture instead of saving immediately.
     @Published var reviewOriginal: UIImage?
@@ -145,10 +149,19 @@ final class CameraModel: NSObject, ObservableObject {
             ?? AVCaptureDevice.default(.builtInDualWideCamera, for: .video, position: position)
             ?? AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position)
 
-        guard let device, let input = try? AVCaptureDeviceInput(device: device) else {
+        guard let device else {
             session.commitConfiguration()
+            let message = "Keine Kamera gefunden."
+            DispatchQueue.main.async { self.configurationError = message }
             return
         }
+        guard let input = try? AVCaptureDeviceInput(device: device) else {
+            session.commitConfiguration()
+            let message = "Kamera ist gerade nicht verfügbar (evtl. von einer anderen App belegt)."
+            DispatchQueue.main.async { self.configurationError = message }
+            return
+        }
+        DispatchQueue.main.async { self.configurationError = nil }
         currentDevice = device
         if session.canAddInput(input) { session.addInput(input) }
 
