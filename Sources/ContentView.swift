@@ -68,12 +68,9 @@ struct ContentView: View {
     private var preview: some View {
         GeometryReader { geo in
             ZStack {
-                if let image = camera.previewImage {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFill()
+                if camera.latestFrame != nil {
+                    MetalPreviewView(frame: camera.latestFrame, isActive: scenePhase == .active)
                         .frame(width: geo.size.width, height: geo.size.height)
-                        .clipped()
                 } else if let error = camera.configurationError {
                     Color.black
                     VStack(spacing: 10) {

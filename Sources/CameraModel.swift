@@ -6,7 +6,9 @@ import Photos
 @MainActor
 final class CameraModel: NSObject, ObservableObject {
     // Live state shown in the UI
-    @Published var previewImage: UIImage?
+    // Feeds MetalPreviewView directly — building a CIImage recipe here is cheap, the actual
+    // GPU render happens on the view's own Metal draw loop, not on this property's setter.
+    @Published var latestFrame: CIImage?
     @Published var isUsingFrontCamera = false
     @Published var fisheyeStrength: Double = 0.55       // 0...1, matches the web version's slider
     @Published var lookID: String = "none"
@@ -53,9 +55,12 @@ final class CameraModel: NSObject, ObservableObject {
     private let depthOutput = AVCaptureDepthDataOutput()
     private let depthQueue = DispatchQueue(label: "cameraobscura.depth")
     private var latestDepthMask: CIImage?
-    // Explicit Metal (never the CPU renderer, which would genuinely cook the phone),
-    // and no working-space conversion — we don't need color management for a live filter
-    // preview, and skipping it noticeably cuts GPU time per frame.
+    // Used only for photo/video capture (rendering a final frame into a CGImage or into the
+    // asset writer's pixel buffer) — never for the live viewfinder, which is MetalPreviewView's
+    // own separate CIContext now. They used to be the same CIContext for both jobs, and
+    // issuing renders from both at once corrupted CoreImage's internal tile-task state and
+    // crashed with SIGSEGV, confirmed on-device. Two independent contexts, each with exactly
+    // one caller, can't race each other — no queue bookkeeping needed to prevent it.
     private let context = CIContext(options: [.useSoftwareRenderer: false, .workingColorSpace: NSNull()])
     private var currentDevice: AVCaptureDevice?
     private var currentAudioDevice: AVCaptureDevice?
@@ -70,16 +75,6 @@ final class CameraModel: NSObject, ObservableObject {
     private var depthFrameCounter = 0
     private let previewFrameSkip = 2
     private let depthFrameSkip = 3
-
-    // Serial, not concurrent: CIContext render calls (createCGImage/render) issued at the
-    // same time from different threads corrupted CoreImage's internal tile-task state and
-    // crashed with SIGSEGV inside CoreImage itself (seen on-device, not theoretical) — a
-    // plain `Task.detached` per frame let multiple renders overlap. This queue guarantees
-    // only one render runs at a time; `isRenderingPreview` then drops any frame that arrives
-    // while one is still in flight instead of queuing it, so the preview always shows the
-    // most recent frame rather than falling behind through a growing backlog.
-    private let renderQueue = DispatchQueue(label: "cameraobscura.render")
-    private var isRenderingPreview = false
 
     // Custom recording pipeline: unlike AVCaptureMovieFileOutput, this actually bakes
     // the fisheye/look effect into the saved file, because every frame runs through
@@ -564,37 +559,15 @@ extension CameraModel: AVCaptureVideoDataOutputSampleBufferDelegate {
             }
             let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
             let processed = self.process(ciImage)
+            // Building this CIImage recipe is cheap — no GPU render happens here. The
+            // viewfinder (MetalPreviewView) renders it on its own Metal draw loop, and
+            // recording renders it into the asset writer's pixel buffer on `self.context`
+            // below — two independent CIContexts, two independent consumers of the same
+            // immutable recipe, so unlike before there is nothing here that can race or
+            // starve the other: the preview keeps updating live even while recording.
+            self.latestFrame = processed
             if self.isRecording {
-                // Recording needs its frame rendered and appended promptly and in order, so
-                // this stays synchronous — and it must never overlap with the background
-                // preview render below on the same CIContext, so the preview render is
-                // skipped entirely while recording (the last preview frame just stays on
-                // screen behind the recording UI, which is already how it read visually).
                 self.appendVideoFrame(processed, presentationTime: presentationTime)
-                return
-            }
-            // The on-screen preview render is the expensive part — an actual GPU pass that
-            // rasterizes the whole filter chain into a CGImage — and it doesn't need to
-            // block anything. Running it inline here (as this used to) serialized every
-            // single camera frame behind the main actor's queue: a backlog of stale frames
-            // built up faster than they could be rendered, which is exactly why the preview
-            // looked frozen and slider/look changes appeared to do nothing — they were
-            // applied, just buried under seconds of queued-up old frames.
-            // `renderQueue` is serial (never two renders on `context` at once — concurrent
-            // CIContext renders corrupted CoreImage's internal state and crashed with
-            // SIGSEGV, confirmed on-device) and `isRenderingPreview` drops this frame
-            // instead of queuing it if a render is already in flight, so the preview always
-            // catches up to the latest frame rather than lagging through a backlog.
-            guard !self.isRenderingPreview else { return }
-            self.isRenderingPreview = true
-            let context = self.context
-            let extent = processed.extent
-            self.renderQueue.async {
-                let cgImage = context.createCGImage(processed, from: extent)
-                Task { @MainActor in
-                    self.isRenderingPreview = false
-                    if let cgImage { self.previewImage = UIImage(cgImage: cgImage) }
-                }
             }
         }
     }
