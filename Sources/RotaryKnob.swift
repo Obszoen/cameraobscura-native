@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// A real rotary knob (270° sweep, gap at the bottom) instead of a horizontal slider —
 /// asked for explicitly: sliders read as generic/cheap here, a knob reads as a considered
@@ -17,6 +18,10 @@ struct RotaryKnob: View {
     @Binding var value: Double // 0...1
     var accent: Color = Brand.rose
     var size: CGFloat = 52
+    /// Where a double-tap resets to — the knob's actual aesthetic "off"/default point, not
+    /// always 0 (e.g. vignette/tone knobs default mid-scale). Lets someone get back to a
+    /// sane starting point without hunting for it by eye or opening the sheet fully.
+    var neutralValue: Double = 0.5
 
     /// The sweep is 270° with a 90° gap centered at the bottom, purely for how the value is
     /// drawn — see below for how it's actually set by touch.
@@ -26,6 +31,8 @@ struct RotaryKnob: View {
     // The value at the moment the current drag began, so `onChanged` can add a delta to it
     // rather than re-deriving an absolute value from the touch every callback.
     @State private var dragStartValue: Double?
+    // Fires once per drag when a run hits 0% or 100%, not on every frame stuck at the end.
+    @State private var endStopFired = false
 
     var body: some View {
         VStack(spacing: 5) {
@@ -76,12 +83,35 @@ struct RotaryKnob: View {
                             if dragStartValue == nil { dragStartValue = value }
                             let travelPoints: CGFloat = 150 // full 0...1 sweep over this much vertical drag
                             let delta = Double(-drag.translation.height / travelPoints)
-                            value = min(max(0, (dragStartValue ?? value) + delta), 1)
+                            let newValue = min(max(0, (dragStartValue ?? value) + delta), 1)
+                            // A real knob's end-of-travel has a physical stop you feel, not
+                            // just a value that stops changing — one buzz per arrival, not
+                            // once per frame while pinned there.
+                            if (newValue <= 0.001 || newValue >= 0.999), !endStopFired {
+                                endStopFired = true
+                                UIImpactFeedbackGenerator(style: .rigid).impactOccurred(intensity: 0.6)
+                            } else if newValue > 0.001, newValue < 0.999 {
+                                endStopFired = false
+                            }
+                            value = newValue
                         }
                         .onEnded { _ in
                             isDragging = false
                             dragStartValue = nil
+                            endStopFired = false
                         }
+                )
+                // `.simultaneousGesture`, not a second `.gesture()` — the drag above uses
+                // minimumDistance 0 (it has to, for the jog-wheel feel), so a normal
+                // `.onTapGesture` chained afterward would compete with it for the same
+                // touch-down and likely never fire. Simultaneous recognition lets both live:
+                // the drag still tracks every touch, and a clean double-tap-without-motion
+                // is still detected on top of it.
+                .simultaneousGesture(
+                    TapGesture(count: 2).onEnded {
+                        value = neutralValue
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    }
                 )
             }
             .frame(width: size, height: size)

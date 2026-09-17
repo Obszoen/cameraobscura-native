@@ -24,6 +24,13 @@ final class CameraModel: NSObject, ObservableObject {
     @Published var zoomFactor: CGFloat = 1.0
     @Published var minZoom: CGFloat = 1.0
     @Published var maxZoom: CGFloat = 1.0
+    // Zoom factors where the 48MP Fusion sensor switches to a secondary native-resolution
+    // crop (e.g. 2x on iPhone Air/16e-class single-lens phones) instead of plain digital
+    // upscaling — a real quality step, not a marketing label. Researched via
+    // AVCaptureDevice.Format.secondaryNativeResolutionZoomFactors, not assumed; empty on
+    // devices/formats that don't have one, which the zoom fader below reads as "no native
+    // step to mark or snap to".
+    @Published var nativeZoomFactors: [CGFloat] = []
     @Published var lastSaveOK: Bool?
     @Published var isRecording = false
     @Published var recordingSeconds: Int = 0
@@ -45,8 +52,14 @@ final class CameraModel: NSObject, ObservableObject {
     @Published var warmth: Double = 0.5
     @Published var highlights: Double = 0.5
     @Published var shadows: Double = 0.5
-    @Published var hasLiDAR = false
-    @Published var depthEnabled = true // only has any effect where hasLiDAR is true
+    // Renamed from `hasLiDAR`: the underlying check (`supportedDepthDataFormats`, below)
+    // tests real depth-capture capability, not a specific sensor. Naming it "LiDAR" was an
+    // assumption baked into a variable name, not something the code actually verified —
+    // iPhone Air ships full single-lens Portrait/depth via a software ML pipeline with no
+    // LiDAR at all (researched, not guessed: Apple's own description of the Air's "new
+    // image pipeline" for single-camera Portrait mode), and would set this same flag true.
+    @Published var hasDepthCapability = false
+    @Published var depthEnabled = true // only has any effect where hasDepthCapability is true
     @Published var proRAWAvailable = false
     @Published var proRAWEnabled = false
     // Set whenever configureSession() can't get a usable camera — no device found, or the
@@ -341,9 +354,12 @@ final class CameraModel: NSObject, ObservableObject {
             conn.isVideoMirrored = isUsingFrontCamera
         }
 
-        // LiDAR-only: real depth-aware fisheye (background warps more than the subject).
-        // Every other device simply never populates hasLiDAR, and the effect quietly
-        // falls back to the uniform warp — no crash, no dead UI, just a smaller feature set.
+        // Real depth-aware fisheye (background warps more than the subject) wherever the
+        // active format actually offers a depth data format — LiDAR devices, but also
+        // iPhone Air's stereo-free single-lens ML depth pipeline, which exposes depth the
+        // same way to AVFoundation. Devices with neither simply never populate this, and
+        // the effect quietly falls back to the uniform warp — no crash, no dead UI, just a
+        // smaller feature set.
         let supportsDepth = !device.activeFormat.supportedDepthDataFormats.isEmpty
         if supportsDepth {
             depthOutput.setDelegate(self, callbackQueue: depthQueue)
@@ -367,7 +383,8 @@ final class CameraModel: NSObject, ObservableObject {
             self.minZoom = device.minAvailableVideoZoomFactor
             self.maxZoom = device.maxAvailableVideoZoomFactor
             self.zoomFactor = device.videoZoomFactor
-            self.hasLiDAR = supportsDepth
+            self.nativeZoomFactors = device.activeFormat.secondaryNativeResolutionZoomFactors
+            self.hasDepthCapability = supportsDepth
             self.proRAWAvailable = self.photoOutput.isAppleProRAWSupported
         }
     }
@@ -386,10 +403,17 @@ final class CameraModel: NSObject, ObservableObject {
 
     func setZoom(_ factor: CGFloat) {
         guard let device = currentDevice else { return }
+        let clamped = max(device.minAvailableVideoZoomFactor, min(factor, device.maxAvailableVideoZoomFactor))
+        // Bug found while wiring the new zoom fader: this published property was never
+        // actually updated after the initial session setup, so any UI bound to it (the old
+        // zoom knob included) silently froze at its starting position — turning it moved
+        // the real camera zoom, but the control's own drawn position never followed. Update
+        // it here, on the main actor, right away rather than waiting on the async device
+        // write below so the UI tracks the finger immediately.
+        zoomFactor = clamped
         sessionQueue.async {
             try? device.lockForConfiguration()
-            device.videoZoomFactor = max(device.minAvailableVideoZoomFactor,
-                                          min(factor, device.maxAvailableVideoZoomFactor))
+            device.videoZoomFactor = clamped
             device.unlockForConfiguration()
         }
     }

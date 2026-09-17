@@ -43,6 +43,15 @@ struct MetalPreviewView: UIViewRepresentable {
         view.preferredFramesPerSecond = 60
         view.framebufferOnly = false
         view.backgroundColor = .black
+        // Reported directly: the live preview looked "krass unschärfer" than the actual
+        // captured photo. A plain MTKView created programmatically (not from a storyboard)
+        // isn't guaranteed to pick up the screen's Retina scale on its own — without this,
+        // its drawable renders at 1x point-resolution instead of the device's real 3x pixel
+        // density, which would look exactly like this: soft/blurry on screen, but the
+        // actual capture (an entirely separate AVCapturePhotoOutput path, full resolution
+        // regardless of what the live preview renders) comes out sharp. Setting this
+        // explicitly is the standard fix, not a guess based on this one symptom alone.
+        view.contentScaleFactor = UIScreen.main.scale
         return view
     }
 

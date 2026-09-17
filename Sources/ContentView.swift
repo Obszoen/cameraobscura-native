@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Full-screen viewfinder with a slim always-visible bottom bar (mode, shutter, flip,
 /// tune) — the standard layout every camera app on the App Store uses — instead of a
@@ -300,8 +301,11 @@ struct ContentView: View {
                 PanelLegend(text: "Optik")
                 knobRow
 
-                if camera.hasLiDAR {
-                    Toggle("Tiefenschärfe-Warp (LiDAR)", isOn: $camera.depthEnabled)
+                if camera.hasDepthCapability {
+                    // Label kept sensor-agnostic — this flag covers both LiDAR devices and
+                    // iPhone Air's LiDAR-free single-lens depth pipeline, so "(LiDAR)" would
+                    // be wrong on exactly the device this app was built for.
+                    Toggle("Tiefenschärfe-Warp", isOn: $camera.depthEnabled)
                         .toggleStyle(.switch)
                         .tint(Brand.rose)
                         .font(.caption)
@@ -322,9 +326,9 @@ struct ContentView: View {
                 PanelLegend(text: "Look")
                 lookPicker
                 HStack(spacing: 0) {
-                    RotaryKnob(title: "Intensität", value: $camera.lookIntensity, accent: Brand.mint)
+                    RotaryKnob(title: "Intensität", value: $camera.lookIntensity, accent: Brand.mint, neutralValue: 0)
                         .frame(maxWidth: .infinity)
-                    RotaryKnob(title: "Farbsaum", value: $camera.chromaticAberration, accent: Brand.skyBlue)
+                    RotaryKnob(title: "Farbsaum", value: $camera.chromaticAberration, accent: Brand.skyBlue, neutralValue: 0)
                         .frame(maxWidth: .infinity)
                 }
 
@@ -378,15 +382,24 @@ struct ContentView: View {
     private var knobRow: some View {
         HStack(spacing: 0) {
             if camera.maxZoom > camera.minZoom + 0.1 {
-                RotaryKnob(title: "Zoom", value: Binding(
-                    get: { (camera.zoomFactor - camera.minZoom) / (min(camera.maxZoom, 8) - camera.minZoom) },
-                    set: { camera.setZoom(camera.minZoom + $0 * (min(camera.maxZoom, 8) - camera.minZoom)) }
-                ), accent: Brand.skyBlue)
+                let span = min(camera.maxZoom, 8) - camera.minZoom
+                ZoomFader(
+                    value: Binding(
+                        get: { Double((camera.zoomFactor - camera.minZoom) / span) },
+                        set: { camera.setZoom(camera.minZoom + CGFloat($0) * span) }
+                    ),
+                    nativeStops: camera.nativeZoomFactors.compactMap { factor in
+                        guard factor > camera.minZoom, factor < min(camera.maxZoom, 8) else { return nil }
+                        return Double((factor - camera.minZoom) / span)
+                    },
+                    label: "Zoom",
+                    valueText: String(format: "%.1f×", camera.zoomFactor)
+                )
                 .frame(maxWidth: .infinity)
             }
-            RotaryKnob(title: "Fisheye", value: $camera.fisheyeStrength)
+            RotaryKnob(title: "Fisheye", value: $camera.fisheyeStrength, neutralValue: 0)
                 .frame(maxWidth: .infinity)
-            RotaryKnob(title: "Vignette", value: $camera.vignetteAmount, accent: Brand.skyBlue)
+            RotaryKnob(title: "Vignette", value: $camera.vignetteAmount, accent: Brand.skyBlue, neutralValue: 0)
                 .frame(maxWidth: .infinity)
         }
     }
@@ -401,7 +414,7 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity)
             RotaryKnob(title: "Sättigung", value: $camera.saturation, accent: Brand.skyBlue)
                 .frame(maxWidth: .infinity)
-            RotaryKnob(title: "Schärfe", value: $camera.sharpness, accent: Brand.rose)
+            RotaryKnob(title: "Schärfe", value: $camera.sharpness, accent: Brand.rose, neutralValue: 0)
                 .frame(maxWidth: .infinity)
         }
     }
@@ -465,6 +478,7 @@ struct ContentView: View {
                     let preset = CuratedPresets.all[index]
                     camera.apply(preset)
                     shuffledPresetName = preset.name
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 } label: {
                     Label("Würfeln", systemImage: "dice.fill")
                         .font(.caption.bold())
@@ -486,6 +500,7 @@ struct ContentView: View {
                 ForEach(presetStore.presets) { preset in
                     Button {
                         camera.apply(preset)
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                     } label: {
                         Text(preset.name)
                             .font(.caption.bold())
