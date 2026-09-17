@@ -140,19 +140,19 @@ struct ContentView: View {
     }
 
     private var bottomBar: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 10) {
             if let ok = camera.lastSaveOK {
                 Text(ok ? "In Fotos gespeichert ✓" : "Speichern fehlgeschlagen")
-                    .font(.caption)
+                    .font(.caption2)
                     .foregroundStyle(ok ? .green : .red)
-                    .padding(.horizontal, 10).padding(.vertical, 4)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(.black.opacity(0.55), in: Capsule())
             }
             HStack {
                 chromeButton("slider.horizontal.3") { showingAdjustments = true }
                     .overlay(alignment: .topTrailing) {
                         if camera.lookID != "none" || camera.fisheyeStrength > 0.01 {
-                            Circle().fill(Brand.rose).frame(width: 8, height: 8).offset(x: 2, y: -2)
+                            Circle().fill(Brand.rose).frame(width: 7, height: 7).offset(x: 1, y: -1)
                         }
                     }
 
@@ -162,17 +162,17 @@ struct ContentView: View {
 
                 chromeButton("arrow.triangle.2.circlepath.camera") { camera.switchCamera() }
             }
-            .padding(.horizontal, 28)
+            .padding(.horizontal, 32)
         }
-        .padding(.bottom, 18)
+        .padding(.bottom, 12)
     }
 
     private func chromeButton(_ systemImage: String, tint: Color = .white, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.title3)
+                .font(.subheadline)
                 .foregroundStyle(tint)
-                .frame(width: 44, height: 44)
+                .frame(width: 38, height: 38)
                 .background(.black.opacity(0.35), in: Circle())
         }
     }
@@ -186,11 +186,11 @@ struct ContentView: View {
             }
         } label: {
             ZStack {
-                Circle().stroke(Brand.rose, lineWidth: 4).frame(width: 72, height: 72)
+                Circle().stroke(Brand.rose, lineWidth: 3).frame(width: 60, height: 60)
                 if mode == .video && camera.isRecording {
-                    RoundedRectangle(cornerRadius: 6).fill(.red).frame(width: 28, height: 28)
+                    RoundedRectangle(cornerRadius: 5).fill(.red).frame(width: 22, height: 22)
                 } else {
-                    Circle().fill(mode == .video ? .red : .white).frame(width: 60, height: 60)
+                    Circle().fill(mode == .video ? .red : .white).frame(width: 50, height: 50)
                 }
             }
         }
@@ -302,7 +302,7 @@ struct ContentView: View {
     private func labeledSlider(_ title: String, value: Binding<Double>) -> some View {
         HStack {
             Text(title).font(.caption).foregroundStyle(.secondary).frame(width: 100, alignment: .leading)
-            Slider(value: value, in: 0...1)
+            Slider(value: value, in: 0...1).tint(Brand.rose)
             Text("\(Int(value.wrappedValue * 100))%").font(.caption.monospacedDigit()).frame(width: 40)
         }
     }

@@ -67,6 +67,16 @@ final class CameraModel: NSObject, ObservableObject {
     private let previewFrameSkip = 2
     private let depthFrameSkip = 3
 
+    // Serial, not concurrent: CIContext render calls (createCGImage/render) issued at the
+    // same time from different threads corrupted CoreImage's internal tile-task state and
+    // crashed with SIGSEGV inside CoreImage itself (seen on-device, not theoretical) — a
+    // plain `Task.detached` per frame let multiple renders overlap. This queue guarantees
+    // only one render runs at a time; `isRenderingPreview` then drops any frame that arrives
+    // while one is still in flight instead of queuing it, so the preview always shows the
+    // most recent frame rather than falling behind through a growing backlog.
+    private let renderQueue = DispatchQueue(label: "cameraobscura.render")
+    private var isRenderingPreview = false
+
     // Custom recording pipeline: unlike AVCaptureMovieFileOutput, this actually bakes
     // the fisheye/look effect into the saved file, because every frame runs through
     // `process()` before being written — the same pipeline the live preview uses.
@@ -152,7 +162,18 @@ final class CameraModel: NSObject, ObservableObject {
         videoOutput.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
         videoOutput.alwaysDiscardsLateVideoFrames = true
         if session.canAddOutput(videoOutput) { session.addOutput(videoOutput) }
-        videoOutput.connection(with: .video)?.videoOrientation = .portrait
+        if let conn = videoOutput.connection(with: .video) {
+            conn.videoOrientation = .portrait
+            // We bypass AVCaptureVideoPreviewLayer entirely (the preview is our own
+            // CIImage → CGImage pipeline), so the front-camera auto-mirroring that a
+            // preview layer gets for free never happens here — without this, the selfie
+            // camera's live preview (and anything recorded from it) came out reading
+            // backwards instead of mirrored like every other camera app.
+            if conn.isVideoMirroringSupported {
+                conn.automaticallyAdjustsVideoMirroring = false
+                conn.isVideoMirrored = isUsingFrontCamera
+            }
+        }
 
         audioOutput.setSampleBufferDelegate(self, queue: sessionQueue)
         if session.canAddOutput(audioOutput) { session.addOutput(audioOutput) }
@@ -162,6 +183,12 @@ final class CameraModel: NSObject, ObservableObject {
         // output is actually attached to the session.
         photoOutput.isLivePhotoCaptureEnabled = photoOutput.isLivePhotoCaptureSupported
         photoOutput.isAppleProRAWEnabled = photoOutput.isAppleProRAWSupported
+        if let conn = photoOutput.connection(with: .video), conn.isVideoMirroringSupported {
+            // Same fix, same reason, for the still-photo path — otherwise a selfie photo
+            // and the live preview it was framed from would mirror inconsistently.
+            conn.automaticallyAdjustsVideoMirroring = false
+            conn.isVideoMirrored = isUsingFrontCamera
+        }
 
         // LiDAR-only: real depth-aware fisheye (background warps more than the subject).
         // Every other device simply never populates hasLiDAR, and the effect quietly
@@ -525,7 +552,13 @@ extension CameraModel: AVCaptureVideoDataOutputSampleBufferDelegate {
             let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
             let processed = self.process(ciImage)
             if self.isRecording {
+                // Recording needs its frame rendered and appended promptly and in order, so
+                // this stays synchronous — and it must never overlap with the background
+                // preview render below on the same CIContext, so the preview render is
+                // skipped entirely while recording (the last preview frame just stays on
+                // screen behind the recording UI, which is already how it read visually).
                 self.appendVideoFrame(processed, presentationTime: presentationTime)
+                return
             }
             // The on-screen preview render is the expensive part — an actual GPU pass that
             // rasterizes the whole filter chain into a CGImage — and it doesn't need to
@@ -534,12 +567,21 @@ extension CameraModel: AVCaptureVideoDataOutputSampleBufferDelegate {
             // built up faster than they could be rendered, which is exactly why the preview
             // looked frozen and slider/look changes appeared to do nothing — they were
             // applied, just buried under seconds of queued-up old frames.
+            // `renderQueue` is serial (never two renders on `context` at once — concurrent
+            // CIContext renders corrupted CoreImage's internal state and crashed with
+            // SIGSEGV, confirmed on-device) and `isRenderingPreview` drops this frame
+            // instead of queuing it if a render is already in flight, so the preview always
+            // catches up to the latest frame rather than lagging through a backlog.
+            guard !self.isRenderingPreview else { return }
+            self.isRenderingPreview = true
             let context = self.context
             let extent = processed.extent
-            Task.detached(priority: .userInitiated) {
-                guard let cgImage = context.createCGImage(processed, from: extent) else { return }
-                let image = UIImage(cgImage: cgImage)
-                await MainActor.run { self.previewImage = image }
+            self.renderQueue.async {
+                let cgImage = context.createCGImage(processed, from: extent)
+                Task { @MainActor in
+                    self.isRenderingPreview = false
+                    if let cgImage { self.previewImage = UIImage(cgImage: cgImage) }
+                }
             }
         }
     }

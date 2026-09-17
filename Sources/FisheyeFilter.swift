@@ -18,11 +18,19 @@ final class FisheyeFilter {
     static let shared = FisheyeFilter()
 
     private let warpKernel: CIWarpKernel?
-    private let gradeKernel: CIColorKernel?
+    // Not CIColorKernel: Apple defines a color kernel as strictly a per-pixel function of
+    // its inputs at the SAME coordinate — no neighborhood/offset sampling allowed. This
+    // kernel offsets its red/blue samples for the chromatic-aberration effect, which
+    // violates that contract; on-device, CIColorKernel(source:) silently failed to compile
+    // it, `try?` swallowed the error, and chromatic aberration + vignette (both computed in
+    // this one kernel) never rendered — confirmed by testing, not theoretical. A general
+    // CIKernel has no such restriction; it just needs an explicit ROI callback since Core
+    // Image can no longer assume 1:1 input/output pixel mapping.
+    private let gradeKernel: CIKernel?
 
     private init() {
         warpKernel = try? CIWarpKernel(source: Self.warpSource)
-        gradeKernel = try? CIColorKernel(source: Self.gradeSource)
+        gradeKernel = try? CIKernel(source: Self.gradeSource)
     }
 
     private static let warpSource = """
@@ -109,9 +117,14 @@ final class FisheyeFilter {
         }
 
         guard let gradeKernel else { return warped }
-        return gradeKernel.apply(extent: extent, arguments: [
-            warped, w, h, Float(chromaticAberration), Float(vignette),
-        ]) ?? warped
+        return gradeKernel.apply(
+            extent: extent,
+            // The chromatic-aberration sample reaches a few pixels away from each output
+            // pixel; pad the region read from `warped` so Core Image doesn't starve the
+            // kernel of source pixels right at the frame edges.
+            roiCallback: { _, rect in rect.insetBy(dx: -40, dy: -40) },
+            arguments: [warped, w, h, Float(chromaticAberration), Float(vignette)]
+        ) ?? warped
     }
 
     private func legacyFallback(_ image: CIImage, strength: Double) -> CIImage {
