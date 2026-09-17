@@ -17,13 +17,19 @@ targets:
         # silently ignores `info.path` below — the app then ships with none of our privacy
         # usage descriptions and gets TCC-killed (SIGABRT) the instant it touches the camera.
         # Confirmed by unzipping a built .ipa: its Info.plist had zero of our custom keys.
-        GENERATE_INFOPLIST_FILE: NO
+        # MUST be quoted: bare `NO` is YAML's boolean false, which XcodeGen writes into the
+        # pbxproj as something other than the literal string "NO" Xcode's build system checks
+        # for — so the unquoted form silently has no effect (verified: still fully auto-generated
+        # after adding it unquoted; CODE_SIGNING_ALLOWED: NO below "works" only because the CI
+        # workflow also passes it as a command-line override, which this setting has no such
+        # safety net for).
+        GENERATE_INFOPLIST_FILE: "NO"
         PRODUCT_BUNDLE_IDENTIFIER: com.danielschweiger.cameraobscura
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1"
         CODE_SIGN_STYLE: Manual
-        CODE_SIGNING_REQUIRED: NO
-        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGNING_REQUIRED: "NO"
+        CODE_SIGNING_ALLOWED: "NO"
         DEVELOPMENT_TEAM: ""
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_ENTITLEMENTS: Sources/CameraObscura.entitlements
