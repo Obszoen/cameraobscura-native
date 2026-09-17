@@ -15,6 +15,8 @@ struct ContentView: View {
     @State private var showingAdjustments = false
     @State private var pinchStartZoom: CGFloat?
     @State private var showGrid = false
+    @State private var lastShuffleIndex: Int?
+    @State private var shuffledPresetName: String?
     @Environment(\.scenePhase) private var scenePhase
 
     enum Mode { case photo, video }
@@ -279,6 +281,12 @@ struct ContentView: View {
 
                 presetBar
 
+                if let shuffledPresetName {
+                    Text("Gewürfelt: \(shuffledPresetName)")
+                        .font(.caption2)
+                        .foregroundStyle(Brand.skyBlue)
+                }
+
                 if camera.proRAWAvailable && mode == .photo {
                     Toggle("ProRAW", isOn: $camera.proRAWEnabled)
                         .toggleStyle(.switch)
@@ -365,6 +373,25 @@ struct ContentView: View {
     private var presetBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
+                Button {
+                    // Never the same one twice in a row — repeating the last pick would
+                    // read as broken ("I tapped shuffle and nothing happened"), not lucky.
+                    var index = Int.random(in: 0..<CuratedPresets.all.count)
+                    if CuratedPresets.all.count > 1, index == lastShuffleIndex {
+                        index = (index + 1) % CuratedPresets.all.count
+                    }
+                    lastShuffleIndex = index
+                    let preset = CuratedPresets.all[index]
+                    camera.apply(preset)
+                    shuffledPresetName = preset.name
+                } label: {
+                    Label("Würfeln", systemImage: "dice.fill")
+                        .font(.caption.bold())
+                        .padding(.horizontal, 12).padding(.vertical, 8)
+                        .background(Brand.skyBlue.opacity(0.22))
+                        .foregroundStyle(Brand.skyBlue)
+                        .clipShape(Capsule())
+                }
                 Button {
                     showingSavePresetAlert = true
                 } label: {

@@ -5,6 +5,12 @@ import SwiftUI
 /// tasteful bit of motion instead of either a flat static logo or the old drifting
 /// rainbow-stripe animation. No social handle overlay: the feedback channel lives in
 /// ContentView's FeedbackBox, where it belongs.
+///
+/// The mark itself is "SplashMark" in the asset catalog — a copy of the actual app icon
+/// artwork (same file, verified by rendering it before it was chosen), not a hand-redrawn
+/// SwiftUI approximation. Redrawing it in SwiftUI shapes risked a subtly-off copy no one
+/// would catch until it was already on screen, since that kind of view can't be rendered
+/// and inspected the way the icon's own SVG mockup was before picking it.
 struct SplashView: View {
     @State private var appeared = false
     @State private var pulsing = false
@@ -14,7 +20,6 @@ struct SplashView: View {
         ZStack {
             Brand.ground.ignoresSafeArea()
 
-            // Ambient glow pulse behind the mark, in the same accents as the mark itself.
             Circle()
                 .fill(
                     RadialGradient(colors: [Brand.rose.opacity(0.35), .clear],
@@ -25,8 +30,11 @@ struct SplashView: View {
                 .opacity(appeared ? 1 : 0)
 
             VStack(spacing: 26) {
-                CameraMark(bodyColor: Brand.paper, ground: Brand.ground)
+                Image("SplashMark")
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
                     .frame(width: 132, height: 132)
+                    .clipShape(RoundedRectangle(cornerRadius: 28))
                 Text("CameraObscura")
                     .font(.system(size: 32, weight: .medium, design: .serif))
                     .italic()
@@ -41,52 +49,6 @@ struct SplashView: View {
                 pulsing = true
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) { onFinished() }
-        }
-    }
-}
-
-/// The brand mark: a camera body with a big lens deliberately breaking the top edge —
-/// the "even a single-lens phone gets a big wide lens now" idea in one shape. Rose outer
-/// ring and glass, mint inner ring, sky-blue glint — the three brand accents in one mark.
-/// Same composition (and the same 1024-unit coordinate space) as the app icon artwork so
-/// the two always read as the same brand.
-struct CameraMark: View {
-    let bodyColor: Color
-    let ground: Color
-
-    var body: some View {
-        GeometryReader { geo in
-            let s = geo.size.width / 1024
-            ZStack {
-                RoundedRectangle(cornerRadius: 18 * s)
-                    .fill(bodyColor)
-                    .frame(width: 150 * s, height: 76 * s)
-                    .position(x: 285 * s, y: 322 * s)
-                RoundedRectangle(cornerRadius: 64 * s)
-                    .fill(bodyColor)
-                    .frame(width: 744 * s, height: 390 * s)
-                    .position(x: 512 * s, y: 545 * s)
-                Circle()
-                    .fill(ground)
-                    .frame(width: 460 * s, height: 460 * s)
-                    .position(x: 512 * s, y: 440 * s)
-                Circle()
-                    .stroke(Brand.rose, lineWidth: 14 * s)
-                    .frame(width: 460 * s, height: 460 * s)
-                    .position(x: 512 * s, y: 440 * s)
-                Circle()
-                    .stroke(Brand.mint.opacity(0.7), lineWidth: 10 * s)
-                    .frame(width: 336 * s, height: 336 * s)
-                    .position(x: 512 * s, y: 440 * s)
-                Circle()
-                    .fill(Brand.rose)
-                    .frame(width: 236 * s, height: 236 * s)
-                    .position(x: 512 * s, y: 440 * s)
-                Circle()
-                    .fill(Brand.skyBlue)
-                    .frame(width: 48 * s, height: 48 * s)
-                    .position(x: 466 * s, y: 394 * s)
-            }
         }
     }
 }
