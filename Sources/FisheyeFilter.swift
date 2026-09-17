@@ -67,13 +67,13 @@ final class FisheyeFilter {
         float r = maxR > 1.0 ? length(d) / maxR : 0.0;
         vec2 dir = maxR > 1.0 ? d / maxR : vec2(0.0, 0.0);
 
-        float shift = chromaAmt * r * r * 0.012 * maxR;
+        float shift = chromaAmt * r * r * 0.022 * maxR;
         vec4 cR = sample(src, samplerTransform(src, position + dir * shift));
         vec4 cG = sample(src, samplerCoord(src));
         vec4 cB = sample(src, samplerTransform(src, position - dir * shift));
         vec4 color = vec4(cR.r, cG.g, cB.b, cG.a);
 
-        float vignette = 1.0 - vignetteAmt * pow(r, 2.2) * 0.55;
+        float vignette = 1.0 - vignetteAmt * pow(r, 2.2) * 0.75;
         color.rgb *= clamp(vignette, 0.0, 1.0);
         return color;
     }

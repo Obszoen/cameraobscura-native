@@ -14,7 +14,7 @@ enum CompositionCoach {
     /// subject that reads "too far right" needs the camera panned right, moving the whole
     /// scene left in frame); a subject standing in for a remote/tripod shot repositions
     /// themselves instead (the opposite sense — they'd need to physically move left).
-    static func hint(for box: CGRect, mode: CameraModel.CoachMode) -> String {
+    static func hint(for box: CGRect, mode: CameraModel.CoachMode, style: CameraModel.CompositionStyle) -> String {
         let headroom = 1 - box.maxY
         let height = box.height
 
@@ -31,7 +31,7 @@ enum CompositionCoach {
             return mode == .photographerMoves ? "Kamera leicht anheben" : "Kamera wird angehoben, bitte kurz warten"
         }
 
-        guard let offset = horizontalOffset(for: box) else {
+        guard let offset = horizontalOffset(for: box, style: style) else {
             return "Komposition sitzt ✓"
         }
         if mode == .photographerMoves {
@@ -46,17 +46,24 @@ enum CompositionCoach {
 
     /// The crosshair's target position, normalized 0...1 bottom-left — same convention as
     /// `box` — or nil once the subject is already close enough to it to stop nudging.
-    static func target(for box: CGRect) -> CGPoint? {
-        guard let offset = horizontalOffset(for: box) else { return nil }
+    static func target(for box: CGRect, style: CameraModel.CompositionStyle) -> CGPoint? {
+        guard let offset = horizontalOffset(for: box, style: style) else { return nil }
         let targetX = box.midX - offset
         return CGPoint(x: targetX, y: box.midY)
     }
 
-    /// Positive = subject is to the right of their nearest rule-of-thirds line; nil once
-    /// within tolerance (nothing left to nudge).
-    private static func horizontalOffset(for box: CGRect) -> CGFloat? {
+    /// Positive = subject is to the right of their target line; nil once within tolerance
+    /// (nothing left to nudge). The target line itself depends on `style`: the two
+    /// rule-of-thirds lines, or dead-center for a deliberately symmetric portrait.
+    private static func horizontalOffset(for box: CGRect, style: CameraModel.CompositionStyle) -> CGFloat? {
         let centerX = box.midX
-        let target: CGFloat = centerX < 0.5 ? (1.0 / 3.0) : (2.0 / 3.0)
+        let target: CGFloat
+        switch style {
+        case .thirds:
+            target = centerX < 0.5 ? (1.0 / 3.0) : (2.0 / 3.0)
+        case .centered:
+            target = 0.5
+        }
         let offset = centerX - target
         return abs(offset) > 0.09 ? offset : nil
     }

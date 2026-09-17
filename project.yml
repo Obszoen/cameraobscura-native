@@ -2,7 +2,11 @@ name: CameraObscura
 options:
   bundleIdPrefix: com.danielschweiger
   deploymentTarget:
-    iOS: "16.0"
+    # Bumped from 16.0 to 16.4 so the adjustments sheet can use a compact custom
+    # `.height()` presentation detent (that API needs 16.4) instead of jumping straight
+    # from `.medium` to `.large` — no real compatibility cost, the only test device
+    # (Sophia's iPhone 17 Air) runs iOS 26.6.
+    iOS: "16.4"
 targets:
   CameraObscura:
     type: application

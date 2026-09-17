@@ -17,6 +17,10 @@ struct ContentView: View {
     @State private var showGrid = false
     @State private var lastShuffleIndex: Int?
     @State private var shuffledPresetName: String?
+    // Compact by default: the primary knobs + look picker fit here without dragging,
+    // reported directly as "man muss zu viel ins Bild rücken" with the old .medium/.large
+    // pair. `.large` stays reachable for the secondary controls (presets, toggles).
+    @State private var adjustmentsDetent: PresentationDetent = .height(360)
     @Environment(\.scenePhase) private var scenePhase
 
     enum Mode { case photo, video }
@@ -54,7 +58,7 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showingAdjustments) {
             adjustmentsSheet
-                .presentationDetents([.medium, .large])
+                .presentationDetents([.height(360), .large], selection: $adjustmentsDetent)
                 .presentationDragIndicator(.visible)
         }
         .alert("Preset speichern", isPresented: $showingSavePresetAlert) {
@@ -101,7 +105,7 @@ struct ContentView: View {
                 if camera.showCompositionCoach, let box = camera.personBoxNormalized {
                     CompositionCoachOverlay(
                         personBox: box,
-                        target: CompositionCoach.target(for: box),
+                        target: CompositionCoach.target(for: box, style: camera.compositionStyle),
                         bufferSize: camera.compositionFrameSize,
                         accent: Brand.mint
                     )
@@ -202,15 +206,24 @@ struct ContentView: View {
         .padding(.top, 8)
     }
 
-    /// Which side of the lens gets told to move — the same crosshair geometry serves both,
-    /// only the wording (see CompositionCoach) and, implicitly, who's expected to act change.
+    /// Two independent parameters, asked for explicitly (one axis of input wasn't enough
+    /// to make the coach feel adjustable): who moves, and what composition it aims for.
     private var coachModeSwitch: some View {
-        Picker("Wer bewegt sich?", selection: $camera.coachMode) {
-            Text("Ich filme").tag(CameraModel.CoachMode.photographerMoves)
-            Text("Ich bin im Bild").tag(CameraModel.CoachMode.subjectMoves)
+        VStack(spacing: 6) {
+            Picker("Wer bewegt sich?", selection: $camera.coachMode) {
+                Text("Ich filme").tag(CameraModel.CoachMode.photographerMoves)
+                Text("Ich bin im Bild").tag(CameraModel.CoachMode.subjectMoves)
+            }
+            .pickerStyle(.segmented)
+            .frame(maxWidth: 260)
+
+            Picker("Ziel-Komposition", selection: $camera.compositionStyle) {
+                Text("Drittel").tag(CameraModel.CompositionStyle.thirds)
+                Text("Zentriert").tag(CameraModel.CompositionStyle.centered)
+            }
+            .pickerStyle(.segmented)
+            .frame(maxWidth: 260)
         }
-        .pickerStyle(.segmented)
-        .frame(maxWidth: 260)
         .padding(.top, 6)
     }
 
@@ -277,7 +290,7 @@ struct ContentView: View {
 
     private var adjustmentsSheet: some View {
         ScrollView {
-            VStack(spacing: 18) {
+            VStack(spacing: 14) {
                 knobRow
 
                 if camera.hasLiDAR {

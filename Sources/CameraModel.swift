@@ -51,6 +51,9 @@ final class CameraModel: NSObject, ObservableObject {
     // coach) — enabled from a toolbar toggle. Analysis only runs at all while this is true.
     @Published var showCompositionCoach = false
     @Published var coachMode: CoachMode = .photographerMoves
+    // Second coaching parameter (asked for explicitly: one axis of input wasn't enough) —
+    // which composition the coach aims for, independent of who's doing the moving.
+    @Published var compositionStyle: CompositionStyle = .thirds
     @Published var compositionHint: String?
     // Vision's boundingBox convention: normalized 0...1, origin bottom-left, relative to
     // `compositionFrameSize` (the raw, undistorted capture buffer's pixel size at analysis
@@ -62,6 +65,7 @@ final class CameraModel: NSObject, ObservableObject {
     @Published var compositionFrameSize: CGSize = .zero
 
     enum CoachMode: Hashable { case photographerMoves, subjectMoves }
+    enum CompositionStyle: Hashable { case thirds, centered }
 
     // Before/after review, shown after a photo capture instead of saving immediately.
     @Published var reviewOriginal: UIImage?
@@ -654,7 +658,7 @@ final class CameraModel: NSObject, ObservableObject {
                 self.isAnalyzingComposition = false
                 self.personBoxNormalized = box
                 self.compositionFrameSize = CGSize(width: width, height: height)
-                self.compositionHint = box.map { CompositionCoach.hint(for: $0, mode: self.coachMode) }
+                self.compositionHint = box.map { CompositionCoach.hint(for: $0, mode: self.coachMode, style: self.compositionStyle) }
             }
         }
     }
@@ -772,11 +776,18 @@ extension CameraModel {
         reviewProcessed = UIImage(cgImage: processedCG)
     }
 
-    /// Called from the review screen's "Behalten" button.
-    func confirmSave(exportPreset: ExportPreset = .original) {
+    /// Called from the review screen's "Behalten" button. `alsoSaveOriginal` saves the
+    /// untouched frame as a second, separate photo — asked for explicitly: people want both
+    /// the edited look AND the unprocessed original available, not a forced choice between
+    /// them. The original is saved plain (no Live Photo pairing); only the edited version
+    /// carries the paired movie clip.
+    func confirmSave(exportPreset: ExportPreset = .original, alsoSaveOriginal: Bool = false) {
         guard let processed = reviewProcessed else { return }
         let exported = exportPreset.apply(to: processed)
         save(photo: exported, pairedLivePhotoURL: reviewLivePhotoURL)
+        if alsoSaveOriginal, let original = reviewOriginal {
+            save(photo: exportPreset.apply(to: original), pairedLivePhotoURL: nil)
+        }
         discardReview()
     }
 

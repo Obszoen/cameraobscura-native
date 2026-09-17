@@ -7,6 +7,7 @@ struct BeforeAfterView: View {
     @ObservedObject var camera: CameraModel
     @State private var dividerX: CGFloat = 0.5
     @State private var exportPreset: ExportPreset = .original
+    @State private var alsoSaveOriginal = false
 
     var body: some View {
         VStack(spacing: 16) {
@@ -32,10 +33,16 @@ struct BeforeAfterView: View {
                             .position(x: geo.size.width * dividerX, y: geo.size.height / 2)
                             .shadow(radius: 2)
 
+                        // The mask above reveals `processed` only within the leading
+                        // `dividerX` fraction, with `original` as the full-size background
+                        // showing through the rest — so the LEFT side is the edited version
+                        // and the RIGHT side is the untouched one. Labels must match that,
+                        // not just read left-to-right as "before/after" (they didn't:
+                        // reported directly, verified against the mask logic above).
                         HStack {
-                            Text("Original").font(.caption2.bold()).padding(6).background(.black.opacity(0.5)).cornerRadius(6)
-                            Spacer()
                             Text("Bearbeitet").font(.caption2.bold()).padding(6).background(.black.opacity(0.5)).cornerRadius(6)
+                            Spacer()
+                            Text("Original").font(.caption2.bold()).padding(6).background(.black.opacity(0.5)).cornerRadius(6)
                         }
                         .foregroundStyle(.white)
                         .padding(10)
@@ -48,7 +55,7 @@ struct BeforeAfterView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 14))
                 .padding()
 
-                Text("Gespeichert wird immer die bearbeitete Version — die Auswahl unten ist nur die Ausgabegröße.")
+                Text("Gespeichert wird die bearbeitete Version — die Auswahl unten ist die Ausgabegröße.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -62,6 +69,13 @@ struct BeforeAfterView: View {
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
 
+                Toggle("Auch Original behalten", isOn: $alsoSaveOriginal)
+                    .toggleStyle(.switch)
+                    .tint(Brand.rose)
+                    .font(.footnote)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal)
+
                 HStack(spacing: 14) {
                     Button {
                         camera.discardReview()
@@ -72,9 +86,9 @@ struct BeforeAfterView: View {
                     .background(Color(white: 0.15)).foregroundStyle(.white).clipShape(RoundedRectangle(cornerRadius: 12))
 
                     Button {
-                        camera.confirmSave(exportPreset: exportPreset)
+                        camera.confirmSave(exportPreset: exportPreset, alsoSaveOriginal: alsoSaveOriginal)
                     } label: {
-                        Label("Behalten", systemImage: "checkmark")
+                        Label(alsoSaveOriginal ? "Beide behalten" : "Behalten", systemImage: "checkmark")
                             .frame(maxWidth: .infinity).padding()
                     }
                     .background(Brand.rose).foregroundStyle(.white).clipShape(RoundedRectangle(cornerRadius: 12))

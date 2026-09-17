@@ -39,6 +39,13 @@ func compositionScreenPoint(normalized: CGPoint, bufferSize: CGSize, viewSize: C
 /// a dot at the subject's actual current position, and a connecting line between them —
 /// the same geometry regardless of mode (photographer- or subject-moves), since it's the
 /// wording elsewhere that changes who is meant to close that gap.
+///
+/// The line/crosshair alone read as static — asked for explicitly: "mehr Feedback" while
+/// closing the gap, not just a fixed dashed line and a text hint that only changes at
+/// thresholds. So everything here also scales continuously with `proximity` (0 = just
+/// entered frame, 1 = dead on target): the line brightens and thickens, the crosshair grows
+/// and brightens, and once truly on target (`target == nil`, the coach has nothing left to
+/// nudge) a solid mint ring confirms it instead of the crosshair just disappearing.
 struct CompositionCoachOverlay: View {
     let personBox: CGRect
     let target: CGPoint?
@@ -54,6 +61,13 @@ struct CompositionCoachOverlay: View {
             let targetPoint = target.flatMap {
                 compositionScreenPoint(normalized: $0, bufferSize: bufferSize, viewSize: viewSize)
             }
+            let proximity: Double = {
+                guard let subjectPoint, let targetPoint else { return 1 }
+                let distance = hypot(subjectPoint.x - targetPoint.x, subjectPoint.y - targetPoint.y)
+                let maxDistance = max(viewSize.width, viewSize.height) * 0.5
+                guard maxDistance > 0 else { return 1 }
+                return max(0, 1 - Double(distance / maxDistance))
+            }()
 
             ZStack {
                 if let subjectPoint, let targetPoint {
@@ -61,21 +75,31 @@ struct CompositionCoachOverlay: View {
                         path.move(to: subjectPoint)
                         path.addLine(to: targetPoint)
                     }
-                    .stroke(accent.opacity(0.6), style: StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
+                    .stroke(accent.opacity(0.35 + proximity * 0.45),
+                            style: StrokeStyle(lineWidth: 1.5 + proximity * 2, dash: [4, 4]))
                 }
                 if let subjectPoint {
                     Circle()
-                        .stroke(.white.opacity(0.8), lineWidth: 2)
+                        .stroke(.white.opacity(0.55 + proximity * 0.45), lineWidth: 2)
                         .frame(width: 14, height: 14)
                         .position(subjectPoint)
                 }
                 if let targetPoint {
                     CrosshairShape()
-                        .stroke(accent, lineWidth: 2)
-                        .frame(width: 34, height: 34)
+                        .stroke(accent, lineWidth: 2 + proximity * 1.5)
+                        .frame(width: 30 + proximity * 14, height: 30 + proximity * 14)
+                        .opacity(0.55 + proximity * 0.45)
                         .position(targetPoint)
+                } else if let subjectPoint {
+                    // Nothing left to nudge — confirm it instead of just removing the
+                    // crosshair, so "good" reads as a positive signal, not an absence.
+                    Circle()
+                        .stroke(Brand.mint, lineWidth: 3)
+                        .frame(width: 22, height: 22)
+                        .position(subjectPoint)
                 }
             }
+            .animation(.easeOut(duration: 0.15), value: proximity)
         }
     }
 }

@@ -8,74 +8,72 @@ struct RotaryKnob: View {
     let title: String
     @Binding var value: Double // 0...1
     var accent: Color = Brand.rose
+    var size: CGFloat = 52
 
-    /// The sweep is 270° with a 90° gap centered at the bottom. In the plain screen-angle
-    /// convention (0° = right/3-o'clock, clockwise positive, matching atan2(dy, dx)), the
-    /// knob's zero point sits at native 135° (bottom-left) and its end at native 45°
-    /// (bottom-right), sweeping clockwise through the top in between.
-    private let sweepStartNativeDegrees: Double = 135
+    /// The sweep is 270° with a 90° gap centered at the bottom, purely for how the value is
+    /// drawn — see below for how it's actually set by touch.
     private let sweepDegrees: Double = 270
 
     @State private var isDragging = false
+    // The value at the moment the current drag began, so `onChanged` can add a delta to it
+    // rather than re-deriving an absolute value from the touch every callback.
+    @State private var dragStartValue: Double?
 
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 5) {
             GeometryReader { geo in
-                let size = min(geo.size.width, geo.size.height)
                 ZStack {
                     // Track: the full available travel, dim.
                     Circle()
                         .trim(from: 0, to: sweepDegrees / 360)
-                        .stroke(Color.white.opacity(0.14), style: StrokeStyle(lineWidth: 5, lineCap: .round))
-                        .rotationEffect(.degrees(sweepStartNativeDegrees))
+                        .stroke(Color.white.opacity(0.14), style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                        .rotationEffect(.degrees(135))
 
                     // Fill: how far the value has turned.
                     Circle()
                         .trim(from: 0, to: (sweepDegrees / 360) * value)
-                        .stroke(accent, style: StrokeStyle(lineWidth: 5, lineCap: .round))
-                        .rotationEffect(.degrees(sweepStartNativeDegrees))
+                        .stroke(accent, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                        .rotationEffect(.degrees(135))
 
                     Circle()
                         .fill(Color.white.opacity(isDragging ? 0.14 : 0.07))
-                        .padding(9)
+                        .padding(7)
 
-                    // Pointer dot at the current angle. Placed at the top by the offset,
-                    // then rotated clockwise from there — a different zero reference (top,
-                    // not right) than the trim's, but both were derived to agree at the
-                    // gap's two ends (see RotaryKnob's angle math check).
+                    // Pointer dot at the current angle. 225° is the top-of-gap reference in
+                    // the same native-angle convention as the trim above (135°); both were
+                    // derived to agree at the gap's two ends.
                     Circle()
                         .fill(accent)
-                        .frame(width: 6, height: 6)
-                        .offset(y: -(size / 2 - 9))
+                        .frame(width: 5, height: 5)
+                        .offset(y: -(size / 2 - 7))
                         .rotationEffect(.degrees(225 + sweepDegrees * value))
                 }
                 .frame(width: size, height: size)
                 .contentShape(Circle())
                 .position(x: geo.size.width / 2, y: geo.size.height / 2)
+                // A real knob doesn't jump to wherever your finger's raw angle-from-center
+                // happens to be — on a 52pt control that made tiny, barely-intentional
+                // finger movements near the center swing the value wildly ("hektisch",
+                // reported directly). Instead: track vertical drag distance as a delta on
+                // top of the value the knob already had when the touch started, the same
+                // jog-wheel feel iOS's own volume/brightness sliders use. Slow, predictable,
+                // and still draws at the correct angle above since that only reads `value`.
                 .gesture(
                     DragGesture(minimumDistance: 0)
                         .onChanged { drag in
                             isDragging = true
-                            let center = CGPoint(x: geo.size.width / 2, y: geo.size.height / 2)
-                            let dx = drag.location.x - center.x
-                            let dy = drag.location.y - center.y
-                            guard dx != 0 || dy != 0 else { return }
-                            var angle = atan2(dy, dx) * 180 / .pi
-                            if angle < 0 { angle += 360 }
-                            var adjusted = angle - sweepStartNativeDegrees
-                            if adjusted < 0 { adjusted += 360 }
-                            if adjusted > sweepDegrees {
-                                // In the bottom gap: snap to whichever end is closer rather
-                                // than let the value jump discontinuously across it.
-                                let gapWidth = 360 - sweepDegrees
-                                adjusted = (adjusted - sweepDegrees) > gapWidth / 2 ? 0 : sweepDegrees
-                            }
-                            value = adjusted / sweepDegrees
+                            if dragStartValue == nil { dragStartValue = value }
+                            let travelPoints: CGFloat = 150 // full 0...1 sweep over this much vertical drag
+                            let delta = Double(-drag.translation.height / travelPoints)
+                            value = min(max(0, (dragStartValue ?? value) + delta), 1)
                         }
-                        .onEnded { _ in isDragging = false }
+                        .onEnded { _ in
+                            isDragging = false
+                            dragStartValue = nil
+                        }
                 )
             }
-            .frame(width: 64, height: 64)
+            .frame(width: size, height: size)
 
             Text(title).font(.caption2).foregroundStyle(.secondary)
             Text("\(Int(value * 100))%").font(.caption2.monospacedDigit()).foregroundStyle(.primary)
