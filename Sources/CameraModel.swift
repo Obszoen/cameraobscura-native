@@ -616,8 +616,15 @@ extension CameraModel: AVCapturePhotoCaptureDelegate {
         }
     }
 
+    // Parameter name matters here, not just type: this is an @objc optional protocol
+    // requirement, so Swift/ObjC selector matching is by full signature. The previous
+    // `photoDisplayName: String?` (wrong name AND wrong type — should be `photoDisplayTime:
+    // CMTime`) meant this never actually satisfied AVCapturePhotoCaptureDelegate's live-photo
+    // callback. AVCapturePhotoOutput checks -respondsToSelector: before starting a Live Photo
+    // capture and, finding no match, threw NSInvalidArgumentException and crashed the app —
+    // every single time Live Photo was on, confirmed via the device's live crash log.
     nonisolated func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingLivePhotoToMovieFileAt outputFileURL: URL,
-                                  duration: CMTime, photoDisplayName: String?, resolvedSettings: AVCaptureResolvedPhotoSettings, error: Error?) {
+                                  duration: CMTime, photoDisplayTime: CMTime, resolvedSettings: AVCaptureResolvedPhotoSettings, error: Error?) {
         guard error == nil else { return }
         Task { @MainActor in
             self.reviewLivePhotoURL = outputFileURL
