@@ -21,6 +21,10 @@ targets:
         CODE_SIGNING_ALLOWED: NO
         DEVELOPMENT_TEAM: ""
         CODE_SIGN_ENTITLEMENTS: Sources/CameraObscura.entitlements
+        # Core Image kernel .metal files declare coreimage::sampler but don't implement
+        # it — the implementation lives in CoreImage's own Metal library and has to be
+        # linked in explicitly, or the AIR linker fails with "symbol(s) not found".
+        MTL_LINKER_FLAGS: -framework CoreImage
     dependencies:
       - sdk: AVFoundation.framework
       - sdk: CoreImage.framework
@@ -49,6 +53,7 @@ targets:
         CODE_SIGNING_REQUIRED: NO
         CODE_SIGNING_ALLOWED: NO
         DEVELOPMENT_TEAM: ""
+        MTL_LINKER_FLAGS: -framework CoreImage
     dependencies:
       - sdk: CoreImage.framework
       - sdk: Photos.framework
