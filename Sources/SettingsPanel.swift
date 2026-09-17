@@ -84,12 +84,32 @@ struct SettingsPanel: View {
                     PanelToggle(title: "Auslöser & Aufnahme", isOn: $settings.soundEnabled, accent: Brand.rose)
                     Spacer()
                 }
+
+                PanelGroove()
+
+                // Asked for directly ("Nutzer lieben das") — also a real practical win in
+                // bright daylight, where the default mint can wash out against a light scene.
+                PanelLegend(text: "Farben")
+                VStack(spacing: 10) {
+                    HStack {
+                        Text("Fadenkreuz").font(.caption).foregroundStyle(.white.opacity(0.85))
+                        Spacer()
+                        ColorPicker("", selection: $settings.crosshairColor, supportsOpacity: false)
+                            .labelsHidden()
+                    }
+                    HStack {
+                        Text("Libelle").font(.caption).foregroundStyle(.white.opacity(0.85))
+                        Spacer()
+                        ColorPicker("", selection: $settings.levelLineColor, supportsOpacity: false)
+                            .labelsHidden()
+                    }
+                }
             }
             .padding()
         }
         .scrollContentBackground(.hidden)
         .background { FaceplateBackground() }
-        .presentationDetents([.height(360)])
+        .presentationDetents([.height(460), .large])
         .presentationDragIndicator(.visible)
     }
 }

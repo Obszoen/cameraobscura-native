@@ -7,14 +7,27 @@ import SwiftUI
 /// in the sucher is one thing, but knowing the exact value without glancing down at the
 /// small in-panel label is what actually lets someone keep their eyes on the shot.
 final class ActiveControl: ObservableObject {
-    @Published var label: String?
-    @Published var value: Double? // 0...1
+    @Published var label: String?      // non-nil only while actually touched — drives overlay visibility
+    @Published var value: Double?      // 0...1
     @Published var accent: Color = Brand.rose
 
-    func begin(label: String, value: Double, accent: Color) {
+    // Persist across `end()` — "whichever control was touched most recently" — so the
+    // viewfinder's two-finger rotate gesture has something to adjust even when no finger
+    // is currently on the panel itself. Plain closures over the knob/fader's own binding,
+    // not a reference to the (transient, struct) view that set them, so they stay valid
+    // after that particular view is re-rendered or discarded.
+    private(set) var lastSetter: ((Double) -> Void)?
+    private(set) var lastGetter: (() -> Double)?
+    private var lastLabel: String?
+
+    func begin(label: String, value: Double, accent: Color,
+               setter: @escaping (Double) -> Void, getter: @escaping () -> Double) {
         self.label = label
         self.value = value
         self.accent = accent
+        self.lastLabel = label
+        self.lastSetter = setter
+        self.lastGetter = getter
     }
 
     func update(value: Double) {
@@ -24,5 +37,12 @@ final class ActiveControl: ObservableObject {
     func end() {
         label = nil
         value = nil
+    }
+
+    /// Called by the viewfinder's rotate gesture: shows the overlay again, reusing
+    /// whichever control was last touched in the panel, while a rotation is adjusting it.
+    func showWhileRotating(value: Double) {
+        label = lastLabel
+        self.value = value
     }
 }

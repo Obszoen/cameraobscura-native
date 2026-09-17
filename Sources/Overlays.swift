@@ -94,7 +94,7 @@ struct CompositionCoachOverlay: View {
                     // Nothing left to nudge — confirm it instead of just removing the
                     // crosshair, so "good" reads as a positive signal, not an absence.
                     Circle()
-                        .stroke(Brand.mint, lineWidth: 3)
+                        .stroke(accent, lineWidth: 3)
                         .frame(width: 22, height: 22)
                         .position(subjectPoint)
                 }
@@ -133,6 +133,8 @@ private struct CrosshairShape: Shape {
 /// flipping color at the threshold — the line becomes the feedback, not just a label on it.
 struct LevelLine: View {
     let rollDegrees: Double
+    /// User-configurable (Einstellungen → Farben) — asked for directly, "Nutzer lieben das".
+    var accent: Color = Brand.mint
     private let levelThreshold = 1.0
 
     private var isLevel: Bool { abs(rollDegrees) < levelThreshold }
@@ -142,7 +144,7 @@ struct LevelLine: View {
 
     var body: some View {
         GeometryReader { geo in
-            let color = isLevel ? Brand.mint : Color.white.opacity(0.65)
+            let color = isLevel ? accent : Color.white.opacity(0.65)
             let thickness: CGFloat = isLevel ? 2.5 : 2
             // Off level: segments reach outward and the center gap widens, giving the tilt
             // more visual weight. Near level: both pull back in — a tightening, not just a

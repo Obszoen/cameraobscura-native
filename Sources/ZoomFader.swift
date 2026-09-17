@@ -59,7 +59,10 @@ struct ZoomFader: View {
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { drag in
-                        if !isDragging { activeControl.begin(label: label, value: value, accent: accent) }
+                        if !isDragging {
+                            activeControl.begin(label: label, value: value, accent: accent,
+                                                 setter: { value = $0 }, getter: { value })
+                        }
                         isDragging = true
                         let raw = 1 - Double(drag.location.y / trackHeight)
                         value = min(max(raw, 0), 1)

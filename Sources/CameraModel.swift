@@ -52,6 +52,11 @@ final class CameraModel: NSObject, ObservableObject {
     @Published var warmth: Double = 0.5
     @Published var highlights: Double = 0.5
     @Published var shadows: Double = 0.5
+    // Automatic overexposure correction — asked for directly ("was kann unsere Fotoapp tun
+    // wenn Objekte zu überbelichtet sind"), off by default and independently toggleable
+    // from the manual "Lichter" knob above, which it quietly drives rather than duplicates.
+    @Published var autoExposureCorrection = false
+    private var exposureCheckCounter = 0
     // Renamed from `hasLiDAR`: the underlying check (`supportedDepthDataFormats`, below)
     // tests real depth-capture capability, not a specific sensor. Naming it "LiDAR" was an
     // assumption baked into a variable name, not something the code actually verified —
@@ -116,6 +121,11 @@ final class CameraModel: NSObject, ObservableObject {
     private let depthOutput = AVCaptureDepthDataOutput()
     private let depthQueue = DispatchQueue(label: "cameraobscura.depth")
     private var latestDepthMask: CIImage?
+    // Real per-pixel distance in meters — separate from `latestDepthMask` above, which is
+    // disparity-based and only ever used as a soft blend mask for the fisheye warp, not
+    // calibrated to real-world units. This one backs the composition coach's distance
+    // callouts ("40cm näher" instead of just "näher rangehen").
+    private var latestDepthMetersBuffer: CVPixelBuffer?
     // Used only for photo/video capture (rendering a final frame into a CGImage or into the
     // asset writer's pixel buffer) — never for the live viewfinder, which is MetalPreviewView's
     // own separate CIContext now. They used to be the same CIContext for both jobs, and
@@ -528,6 +538,26 @@ final class CameraModel: NSObject, ObservableObject {
         return out
     }
 
+    /// Samples the frame's average brightness (CIAreaAverage — a native GPU reduction, not
+    /// a manual per-pixel scan) and, when the scene reads as overexposed, nudges the
+    /// "Lichter" knob toward recovery; relaxes back toward neutral once it doesn't. This is
+    /// an honest average-luminance heuristic, not full per-pixel highlight-clipping
+    /// detection (that would need a real histogram) — good enough to catch "way too bright"
+    /// and correct for it automatically, which is what was actually asked for. Smoothed
+    /// (small step per check, not snapped) so the correction is never visible as a jump.
+    private func adjustHighlightsForExposure(_ image: CIImage) {
+        guard let avgFilter = CIFilter(name: "CIAreaAverage") else { return }
+        avgFilter.setValue(image, forKey: kCIInputImageKey)
+        avgFilter.setValue(CIVector(cgRect: image.extent), forKey: kCIInputExtentKey)
+        guard let avgImage = avgFilter.outputImage else { return }
+        var pixel = [UInt8](repeating: 0, count: 4)
+        context.render(avgImage, toBitmap: &pixel, rowBytes: 4,
+                        bounds: CGRect(x: 0, y: 0, width: 1, height: 1), format: .RGBA8, colorSpace: nil)
+        let luminance = (0.299 * Double(pixel[0]) + 0.587 * Double(pixel[1]) + 0.114 * Double(pixel[2])) / 255.0
+        let target: Double = luminance > 0.78 ? 0.78 : 0.5
+        highlights += (target - highlights) * 0.15
+    }
+
     private func applyGrain(to image: CIImage) -> CIImage {
         guard grain else { return image }
         guard let noise = CIFilter(name: "CIRandomGenerator")?.outputImage?.cropped(to: image.extent) else { return image }
@@ -760,7 +790,10 @@ final class CameraModel: NSObject, ObservableObject {
                 self.isAnalyzingComposition = false
                 self.personBoxNormalized = box
                 self.compositionFrameSize = CGSize(width: width, height: height)
-                self.compositionHint = box.map { CompositionCoach.hint(for: $0, mode: self.coachMode, style: self.compositionStyle) }
+                let distance = box.flatMap { self.distanceInMeters(atNormalizedPoint: CGPoint(x: $0.midX, y: $0.midY)) }
+                self.compositionHint = box.map {
+                    CompositionCoach.hint(for: $0, mode: self.coachMode, style: self.compositionStyle, distanceMeters: distance)
+                }
             }
         }
     }
@@ -789,7 +822,36 @@ extension CameraModel: AVCaptureDepthDataOutputDelegate {
                 "inputBVector": CIVector(x: 0.28, y: 0, z: 0, w: 0),
                 "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
             ])
+
+            // A second, independent conversion to real metric depth (not disparity) — the
+            // device's own calibration data does the math, so this is an actual measurement,
+            // not an approximation derived from the disparity mask above.
+            let metric = depthData.converting(toDepthDataType: kCVPixelFormatType_DepthFloat32)
+            self.latestDepthMetersBuffer = metric.depthDataMap
         }
+    }
+
+    /// Samples `latestDepthMetersBuffer` at a normalized point (0...1, bottom-left origin —
+    /// Vision's convention, matching `personBoxNormalized`). Returns nil wherever depth
+    /// simply isn't available yet (no depth capability, or before the first frame arrives)
+    /// or the sampled value isn't a usable finite distance.
+    func distanceInMeters(atNormalizedPoint point: CGPoint) -> Double? {
+        guard let buffer = latestDepthMetersBuffer else { return nil }
+        CVPixelBufferLockBaseAddress(buffer, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
+        guard let base = CVPixelBufferGetBaseAddress(buffer) else { return nil }
+        let width = CVPixelBufferGetWidth(buffer)
+        let height = CVPixelBufferGetHeight(buffer)
+        let bytesPerRow = CVPixelBufferGetBytesPerRow(buffer)
+        guard width > 0, height > 0 else { return nil }
+        let x = min(max(Int(point.x * CGFloat(width)), 0), width - 1)
+        // The depth buffer, like the color buffer, is row-major top-left — Vision's box
+        // uses bottom-left origin, so flip Y to sample the same physical point.
+        let y = min(max(Int((1 - point.y) * CGFloat(height)), 0), height - 1)
+        let floatPtr = base.advanced(by: y * bytesPerRow).assumingMemoryBound(to: Float32.self)
+        let meters = Double(floatPtr[x])
+        guard meters.isFinite, meters > 0 else { return nil }
+        return meters
     }
 }
 
@@ -823,6 +885,16 @@ extension CameraModel: AVCaptureVideoDataOutputSampleBufferDelegate {
             self.latestFrame = processed
             if self.isRecording {
                 self.appendVideoFrame(processed, presentationTime: presentationTime)
+            }
+
+            if self.autoExposureCorrection {
+                self.exposureCheckCounter += 1
+                // A few times a second is plenty — this is a slow drift correction, not a
+                // per-frame effect, and it's one extra GPU render + a 4-byte CPU readback
+                // each time, not free.
+                if self.exposureCheckCounter % 20 == 0 {
+                    self.adjustHighlightsForExposure(processed)
+                }
             }
 
             if self.showCompositionCoach, !self.isAnalyzingComposition {

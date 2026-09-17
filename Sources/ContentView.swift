@@ -18,6 +18,7 @@ struct ContentView: View {
     @State private var showingAdjustments = false
     @State private var showingSettings = false
     @State private var pinchStartZoom: CGFloat?
+    @State private var rotationStartValue: Double?
     @State private var showGrid = false
     @State private var lastShuffleIndex: Int?
     @State private var shuffledPresetName: String?
@@ -104,7 +105,7 @@ struct ContentView: View {
                         .allowsHitTesting(false)
                 }
 
-                LevelLine(rollDegrees: camera.rollDegrees)
+                LevelLine(rollDegrees: camera.rollDegrees, accent: settings.levelLineColor)
                     .allowsHitTesting(false)
 
                 if camera.showCompositionCoach, let box = camera.personBoxNormalized {
@@ -112,7 +113,7 @@ struct ContentView: View {
                         personBox: box,
                         target: CompositionCoach.target(for: box, style: camera.compositionStyle),
                         bufferSize: camera.compositionFrameSize,
-                        accent: Brand.mint
+                        accent: settings.crosshairColor
                     )
                     .allowsHitTesting(false)
                 }
@@ -124,7 +125,7 @@ struct ContentView: View {
                             .font(.caption.bold())
                             .padding(.horizontal, 14).padding(.vertical, 8)
                             .background(.black.opacity(0.6), in: Capsule())
-                            .foregroundStyle(Brand.mint)
+                            .foregroundStyle(settings.crosshairColor)
                         Spacer().frame(height: 150)
                     }
                     .allowsHitTesting(false)
@@ -204,6 +205,30 @@ struct ContentView: View {
                         camera.setZoom(base * scale)
                     }
                     .onEnded { _ in pinchStartZoom = nil }
+            )
+            // Two-finger rotate directly on the shot, adjusting whichever knob/fader was
+            // last touched — asked for directly: eyes stay on the frame, fingers work
+            // "blind" the way real lens/aperture rings do. `.simultaneousGesture`, not a
+            // second `.gesture()`, specifically so it coexists with the pinch-to-zoom above
+            // rather than replacing it — pinch and rotate are two fingers doing two
+            // different things at once, exactly what iOS's own gesture recognizers already
+            // expect apps like this to combine.
+            .simultaneousGesture(
+                RotationGesture()
+                    .onChanged { angle in
+                        guard let getter = activeControl.lastGetter, let setter = activeControl.lastSetter else { return }
+                        if rotationStartValue == nil { rotationStartValue = getter() }
+                        // A full 180° turn sweeps the whole 0...1 range — enough travel to
+                        // feel deliberate without needing an unrealistic full rotation.
+                        let delta = angle.degrees / 180
+                        let newValue = min(max((rotationStartValue ?? getter()) + delta, 0), 1)
+                        setter(newValue)
+                        activeControl.showWhileRotating(value: newValue)
+                    }
+                    .onEnded { _ in
+                        rotationStartValue = nil
+                        activeControl.end()
+                    }
             )
         }
         .ignoresSafeArea()
@@ -404,15 +429,26 @@ struct ContentView: View {
 
                 PanelLegend(text: "Modi")
                 PanelTicks()
-                HStack(spacing: 14) {
-                    PanelToggle(title: "Auto", isOn: $camera.autoEnhance, accent: Brand.mint)
-                    PanelToggle(title: "Rund", isOn: $camera.circleMask, accent: Brand.mint)
-                    PanelToggle(title: "Korn", isOn: $camera.grain, accent: Brand.mint)
-                    if mode == .photo {
-                        PanelToggle(title: "Live", isOn: $camera.livePhotoEnabled, accent: Brand.mint)
-                    } else {
-                        PanelToggle(title: "Ton", isOn: $camera.audioEnabled, accent: Brand.mint)
-                            .disabled(camera.isRecording)
+                // Two rows of three, not one row of five/six — a single HStack would
+                // overflow the narrower leading/trailing panel widths (Einstellungen →
+                // Menü-Richtung), and wrapping isn't automatic for a plain HStack.
+                VStack(spacing: 14) {
+                    HStack(spacing: 14) {
+                        PanelToggle(title: "Auto", isOn: $camera.autoEnhance, accent: Brand.mint)
+                        PanelToggle(title: "Rund", isOn: $camera.circleMask, accent: Brand.mint)
+                        PanelToggle(title: "Korn", isOn: $camera.grain, accent: Brand.mint)
+                    }
+                    HStack(spacing: 14) {
+                        // Distinct from "Auto" above (Apple's generic auto-adjust) —
+                        // specifically watches for and corrects overexposure, asked for
+                        // directly, independently toggleable.
+                        PanelToggle(title: "Belichtung", isOn: $camera.autoExposureCorrection, accent: Brand.skyBlue)
+                        if mode == .photo {
+                            PanelToggle(title: "Live", isOn: $camera.livePhotoEnabled, accent: Brand.mint)
+                        } else {
+                            PanelToggle(title: "Ton", isOn: $camera.audioEnabled, accent: Brand.mint)
+                                .disabled(camera.isRecording)
+                        }
                     }
                 }
 

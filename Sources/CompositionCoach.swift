@@ -14,15 +14,37 @@ enum CompositionCoach {
     /// subject that reads "too far right" needs the camera panned right, moving the whole
     /// scene left in frame); a subject standing in for a remote/tripod shot repositions
     /// themselves instead (the opposite sense — they'd need to physically move left).
-    static func hint(for box: CGRect, mode: CameraModel.CoachMode, style: CameraModel.CompositionStyle) -> String {
+    /// - Parameter distanceMeters: real measured distance to the subject (from the depth
+    ///   sensor — LiDAR, or iPhone Air's LiDAR-free ML depth pipeline, whichever the device
+    ///   has), when available. Gives an exact, actionable callout ("40cm näher") instead of
+    ///   the bounding-box-height guess — asked for directly, and a real accessibility win
+    ///   for anyone who can't judge framing distance by eye alone. Falls back to the
+    ///   heuristic below wherever depth isn't available (older devices, or before the first
+    ///   depth frame arrives).
+    static func hint(for box: CGRect, mode: CameraModel.CoachMode, style: CameraModel.CompositionStyle,
+                      distanceMeters: Double? = nil) -> String {
         let headroom = 1 - box.maxY
         let height = box.height
 
-        if height < 0.22 {
-            return mode == .photographerMoves ? "Näher rangehen" : "Bitte näher zur Kamera kommen"
-        }
-        if height > 0.88 {
-            return mode == .photographerMoves ? "Etwas zurücktreten" : "Bitte einen Schritt zurück"
+        // Comfortable portrait framing range for a single subject — outside it, lead with
+        // the precise distance callout rather than the cruder height-based guess.
+        let idealMin = 1.2, idealMax = 2.4
+        if let distanceMeters {
+            if distanceMeters < idealMin {
+                let text = distanceLabel(idealMin - distanceMeters)
+                return mode == .photographerMoves ? "\(text) zurücktreten" : "Bitte \(text) zurücktreten"
+            }
+            if distanceMeters > idealMax {
+                let text = distanceLabel(distanceMeters - idealMax)
+                return mode == .photographerMoves ? "\(text) näher rangehen" : "Bitte \(text) näher kommen"
+            }
+        } else {
+            if height < 0.22 {
+                return mode == .photographerMoves ? "Näher rangehen" : "Bitte näher zur Kamera kommen"
+            }
+            if height > 0.88 {
+                return mode == .photographerMoves ? "Etwas zurücktreten" : "Bitte einen Schritt zurück"
+            }
         }
         if headroom > 0.28 {
             return mode == .photographerMoves ? "Kamera senken – zu viel Luft über dem Kopf" : "Kamera wird gesenkt, bitte kurz warten"
@@ -50,6 +72,12 @@ enum CompositionCoach {
         guard let offset = horizontalOffset(for: box, style: style) else { return nil }
         let targetX = box.midX - offset
         return CGPoint(x: targetX, y: box.midY)
+    }
+
+    /// A distance delta in meters as a short German label — centimeters under a meter
+    /// (people judge close-range distance that way), meters with one decimal beyond it.
+    private static func distanceLabel(_ deltaMeters: Double) -> String {
+        deltaMeters < 1 ? "\(Int((deltaMeters * 100).rounded()))cm" : String(format: "%.1fm", deltaMeters)
     }
 
     /// Positive = subject is to the right of their target line; nil once within tolerance

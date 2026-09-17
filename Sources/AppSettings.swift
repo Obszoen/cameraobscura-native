@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Which screen edge the adjustments panel slides in from — asked for directly: some
 /// people want it from the bottom, others from the top, or sliding in from either side.
@@ -60,11 +61,21 @@ final class AppSettings: ObservableObject {
     @Published var soundEnabled: Bool {
         didSet { UserDefaults.standard.set(soundEnabled, forKey: Keys.sound) }
     }
+    // Composition coach crosshair + level-line colors — asked for directly ("Nutzer lieben
+    // das"). `Color` itself isn't Codable, so these persist as their sRGB components.
+    @Published var crosshairColor: Color {
+        didSet { Self.saveColor(crosshairColor, key: Keys.crosshairColor) }
+    }
+    @Published var levelLineColor: Color {
+        didSet { Self.saveColor(levelLineColor, key: Keys.levelLineColor) }
+    }
 
     private enum Keys {
         static let edge = "com.danielschweiger.cameraobscura.panelEdge"
         static let opacity = "com.danielschweiger.cameraobscura.panelOpacity"
         static let sound = "com.danielschweiger.cameraobscura.soundEnabled"
+        static let crosshairColor = "com.danielschweiger.cameraobscura.crosshairColor"
+        static let levelLineColor = "com.danielschweiger.cameraobscura.levelLineColor"
     }
 
     init() {
@@ -75,5 +86,22 @@ final class AppSettings: ObservableObject {
         let storedOpacity = defaults.object(forKey: Keys.opacity) as? Double
         panelOpacity = storedOpacity ?? 0.97
         soundEnabled = (defaults.object(forKey: Keys.sound) as? Bool) ?? true
+        crosshairColor = Self.loadColor(Keys.crosshairColor, default: Brand.mint)
+        levelLineColor = Self.loadColor(Keys.levelLineColor, default: Brand.mint)
+    }
+
+    private static func saveColor(_ color: Color, key: String) {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        UIColor(color).getRed(&r, green: &g, blue: &b, alpha: &a)
+        let data = try? JSONEncoder().encode([Double(r), Double(g), Double(b), Double(a)])
+        UserDefaults.standard.set(data, forKey: key)
+    }
+
+    private static func loadColor(_ key: String, default fallback: Color) -> Color {
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let comps = try? JSONDecoder().decode([Double].self, from: data), comps.count == 4 else {
+            return fallback
+        }
+        return Color(.sRGB, red: comps[0], green: comps[1], blue: comps[2], opacity: comps[3])
     }
 }

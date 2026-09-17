@@ -87,7 +87,8 @@ struct RotaryKnob: View {
                             isDragging = true
                             if dragStartValue == nil {
                                 dragStartValue = value
-                                activeControl.begin(label: title, value: value, accent: accent)
+                                activeControl.begin(label: title, value: value, accent: accent,
+                                                     setter: { value = $0 }, getter: { value })
                             }
                             // Finer control near the middle of the range (40-60%), asked for
                             // directly: more physical travel needed per % there, less at the
