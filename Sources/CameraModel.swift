@@ -227,6 +227,23 @@ final class CameraModel: NSObject, ObservableObject {
                 conn.automaticallyAdjustsVideoMirroring = false
                 conn.isVideoMirrored = isUsingFrontCamera
             }
+            // Real electronic image stabilization (Apple's own EIS, not a fake "feels
+            // smoother" gimmick) — .cinematicExtended is the strongest mode devices that
+            // support it offer; conn.activeVideoStabilizationMode reports back whichever
+            // mode the device actually granted, since not every device supports the
+            // strongest tier and AVFoundation silently falls back on its own.
+            if conn.isVideoStabilizationSupported {
+                conn.preferredVideoStabilizationMode = .cinematicExtended
+            }
+        }
+
+        // Real low-light boost (Apple's own API for it) — not a green-tinted "night vision"
+        // filter pretending to be something the hardware can't do. There is no thermal
+        // sensor on an iPhone; a fake heat-map filter would just be lying to whoever uses it.
+        if device.isLowLightBoostSupported {
+            try? device.lockForConfiguration()
+            device.automaticallyEnablesLowLightBoostWhenAvailable = true
+            device.unlockForConfiguration()
         }
 
         audioOutput.setSampleBufferDelegate(self, queue: sessionQueue)
