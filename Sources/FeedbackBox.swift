@@ -34,8 +34,8 @@ struct FeedbackBox: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
-            .background(Color.pink.opacity(0.18))
-            .foregroundStyle(.pink)
+            .background(Brand.rose.opacity(0.18))
+            .foregroundStyle(Brand.rose)
             .clipShape(RoundedRectangle(cornerRadius: 12))
         }
     }
