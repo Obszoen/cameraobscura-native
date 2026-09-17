@@ -59,7 +59,11 @@ struct ContentView: View {
         .sheet(isPresented: $showingAdjustments) {
             adjustmentsSheet
                 .presentationDetents([.height(360), .large], selection: $adjustmentsDetent)
-                .presentationDragIndicator(.visible)
+                // A custom grabber capsule is drawn inside adjustmentsSheet itself, styled
+                // to match the panel — the plain system indicator would look like a second,
+                // clashing element stacked on top of it.
+                .presentationDragIndicator(.hidden)
+                .presentationBackground { FaceplateBackground() }
         }
         .alert("Preset speichern", isPresented: $showingSavePresetAlert) {
             TextField("Name", text: $newPresetName)
@@ -291,6 +295,9 @@ struct ContentView: View {
     private var adjustmentsSheet: some View {
         ScrollView {
             VStack(spacing: 14) {
+                Capsule().fill(.white.opacity(0.2)).frame(width: 36, height: 4).padding(.top, 2)
+
+                PanelLegend(text: "Optik")
                 knobRow
 
                 if camera.hasLiDAR {
@@ -300,10 +307,15 @@ struct ContentView: View {
                         .font(.caption)
                 }
 
+                PanelGroove()
+
+                PanelLegend(text: "Look")
                 lookPicker
+                RotaryKnob(title: "Intensität", value: $camera.lookIntensity, accent: Brand.mint)
 
-                RotaryKnob(title: "Look-Intensität", value: $camera.lookIntensity, accent: Brand.mint)
+                PanelGroove()
 
+                PanelLegend(text: "Presets")
                 presetBar
 
                 if let shuffledPresetName {
@@ -319,6 +331,9 @@ struct ContentView: View {
                         .font(.caption)
                 }
 
+                PanelGroove()
+
+                PanelLegend(text: "Modi")
                 HStack(spacing: 18) {
                     Toggle("Auto", isOn: $camera.autoEnhance).toggleStyle(.button)
                     Toggle("Rund", isOn: $camera.circleMask).toggleStyle(.button)
@@ -336,8 +351,9 @@ struct ContentView: View {
                 FeedbackBox()
             }
             .padding()
-            .padding(.top, 4)
+            .padding(.top, 2)
         }
+        .scrollContentBackground(.hidden)
         .tint(Brand.rose)
     }
 

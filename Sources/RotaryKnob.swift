@@ -4,6 +4,14 @@ import SwiftUI
 /// asked for explicitly: sliders read as generic/cheap here, a knob reads as a considered
 /// instrument control. Angle math verified numerically before writing this (top of the
 /// knob = 0.5, the two ends of the gap = 0.0/1.0) rather than trusted on faith.
+///
+/// The cap itself is a Blender-rendered dark anodized-aluminum knob (see
+/// `../../render_knob.py` in the project's scratch history for the generating script,
+/// asset lives at `Assets.xcassets/RotaryKnobCap`) — a flat vector circle read as generic
+/// "Baukasten" UI, reported directly. Rendered orthographic/straight-down specifically so
+/// it can be freely rotated here in 2D without ever betraying a 3D perspective. The accent-
+/// colored arc stays as a printed-scale/LED-ring cue behind the cap — real hardware
+/// (synths, older cameras) commonly combines both around one physical knob.
 struct RotaryKnob: View {
     let title: String
     @Binding var value: Double // 0...1
@@ -23,30 +31,33 @@ struct RotaryKnob: View {
         VStack(spacing: 5) {
             GeometryReader { geo in
                 ZStack {
-                    // Track: the full available travel, dim.
+                    // Track: the full available travel, dim — reads as the panel's printed
+                    // scale, sitting still while only the knob cap on top rotates.
                     Circle()
                         .trim(from: 0, to: sweepDegrees / 360)
-                        .stroke(Color.white.opacity(0.14), style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                        .stroke(Color.white.opacity(0.14), style: StrokeStyle(lineWidth: 3, lineCap: .round))
                         .rotationEffect(.degrees(135))
 
-                    // Fill: how far the value has turned.
+                    // Fill: how far the value has turned — the LED-ring cue real encoder
+                    // knobs (Korg's included) pair with a printed scale.
                     Circle()
                         .trim(from: 0, to: (sweepDegrees / 360) * value)
-                        .stroke(accent, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                        .stroke(accent, style: StrokeStyle(lineWidth: 3, lineCap: .round))
                         .rotationEffect(.degrees(135))
+                        .shadow(color: accent.opacity(isDragging ? 0.7 : 0.35), radius: isDragging ? 4 : 2)
 
-                    Circle()
-                        .fill(Color.white.opacity(isDragging ? 0.14 : 0.07))
-                        .padding(7)
-
-                    // Pointer dot at the current angle. 225° is the top-of-gap reference in
-                    // the same native-angle convention as the trim above (135°); both were
-                    // derived to agree at the gap's two ends.
-                    Circle()
-                        .fill(accent)
-                        .frame(width: 5, height: 5)
-                        .offset(y: -(size / 2 - 7))
+                    // The rendered metal cap, inset from the scale ring so both stay legible.
+                    // 225° is the top-of-gap reference in the same native-angle convention as
+                    // the track's 135° above; the cap's printed indicator points "up" in the
+                    // source render, so this rotation alone places it correctly.
+                    Image("RotaryKnobCap")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: size - 12, height: size - 12)
                         .rotationEffect(.degrees(225 + sweepDegrees * value))
+                        .scaleEffect(isDragging ? 1.06 : 1.0)
+                        .shadow(color: .black.opacity(0.5), radius: isDragging ? 5 : 3, y: 2)
+                        .animation(.easeOut(duration: 0.12), value: isDragging)
                 }
                 .frame(width: size, height: size)
                 .contentShape(Circle())
@@ -75,8 +86,16 @@ struct RotaryKnob: View {
             }
             .frame(width: size, height: size)
 
-            Text(title).font(.caption2).foregroundStyle(.secondary)
-            Text("\(Int(value * 100))%").font(.caption2.monospacedDigit()).foregroundStyle(.primary)
+            // Silkscreened-panel-legend look: small caps, letter-spaced, monospaced value —
+            // the same printed-label language as the faceplate around it.
+            Text(title)
+                .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                .tracking(1.0)
+                .textCase(.uppercase)
+                .foregroundStyle(.secondary)
+            Text("\(Int(value * 100))")
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundStyle(.primary.opacity(0.85))
         }
     }
 }
