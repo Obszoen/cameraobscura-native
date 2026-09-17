@@ -21,12 +21,14 @@ targets:
         CODE_SIGNING_ALLOWED: NO
         DEVELOPMENT_TEAM: ""
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        # No CODE_SIGN_ENTITLEMENTS here on purpose: the free/personal-team signing tier
-        # used for sideloading cannot issue the com.apple.developer.applesignin
-        # entitlement at all. Requesting it doesn't just fail Sign in with Apple at
-        # runtime — the whole app silently fails to install, with no error surfaced
-        # anywhere in the transfer log. Re-add Sources/CameraObscura.entitlements here
-        # once on the paid Apple Developer Program.
+        # Empty on purpose (no applesignin key): the free/personal-team signing tier used
+        # for sideloading cannot issue the com.apple.developer.applesignin entitlement at
+        # all, and requesting it silently breaks the on-device install with no error
+        # anywhere in the transfer log. But an entirely MISSING entitlements file breaks
+        # AltServer-Linux's own signing step ("Error parsing entitlements") — so it needs
+        # to exist and just be empty, not be absent. Add applesignin back here once on the
+        # paid Apple Developer Program.
+        CODE_SIGN_ENTITLEMENTS: Sources/CameraObscura.entitlements
     dependencies:
       - sdk: AVFoundation.framework
       - sdk: CoreImage.framework
@@ -53,6 +55,7 @@ targets:
         CODE_SIGNING_REQUIRED: NO
         CODE_SIGNING_ALLOWED: NO
         DEVELOPMENT_TEAM: ""
+        CODE_SIGN_ENTITLEMENTS: PhotoEditingExtension/PhotoEditingExtension.entitlements
     dependencies:
       - sdk: CoreImage.framework
       - sdk: Photos.framework
