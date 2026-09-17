@@ -38,6 +38,30 @@ targets:
       - sdk: CoreImage.framework
       - sdk: Photos.framework
       - sdk: PhotosUI.framework
+    # Belt-and-suspenders: `xcodebuild -showBuildSettings` confirms GENERATE_INFOPLIST_FILE=NO
+    # and INFOPLIST_FILE=Sources/Info.plist are both correctly resolved, yet the packaged
+    # Info.plist still comes out with none of our custom keys (verified twice by unzipping the
+    # built .ipa) — an unresolved Xcode 16.2 / XcodeGen project-format quirk, not a config typo.
+    # Patch the required keys into the already-built Info.plist directly so the app cannot ship
+    # without them regardless of whatever the synthesis step does upstream.
+    postBuildScripts:
+      - name: Patch required Info.plist keys
+        script: |
+          set -e
+          PLIST="$CODESIGNING_FOLDER_PATH/Info.plist"
+          set_key() {
+            /usr/libexec/PlistBuddy -c "Set :$1 $2" "$PLIST" 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Add :$1 string $2" "$PLIST"
+          }
+          set_key CFBundleDisplayName "CameraObscura"
+          set_key NSCameraUsageDescription "CameraObscura braucht die Kamera, um Fisheye-Fotos und -Videos aufzunehmen."
+          set_key NSMicrophoneUsageDescription "CameraObscura braucht das Mikrofon, um Videos mit Ton aufzunehmen."
+          set_key NSPhotoLibraryAddUsageDescription "CameraObscura speichert deine bearbeiteten Fotos und Videos in deiner Fotos-App."
+          /usr/libexec/PlistBuddy -c "Delete :LSApplicationQueriesSchemes" "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :LSApplicationQueriesSchemes array" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :LSApplicationQueriesSchemes:0 string instagram" "$PLIST"
+          echo "Patched Info.plist:"
+          /usr/libexec/PlistBuddy -c "Print" "$PLIST"
     # PhotoEditingExtension target temporarily removed: sideloading via the free/personal
     # signing tier consistently stalled at "Finished writing to device" (75%) whenever an
     # embedded app extension was present — the on-device installer never completed for the
