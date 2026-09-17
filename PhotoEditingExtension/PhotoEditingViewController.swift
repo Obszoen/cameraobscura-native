@@ -119,17 +119,17 @@ private struct PhotoEditView: View {
                 HStack {
                     Text("Fisheye").font(.caption)
                     Slider(value: $state.fisheyeStrength, in: 0...1)
-                        .onChange(of: state.fisheyeStrength) { _, _ in onChange() }
+                        .onChange(of: state.fisheyeStrength) { _ in onChange() }
                 }
                 Picker("Look", selection: $state.lookID) {
                     ForEach(LensLook.all) { look in Text(look.name).tag(look.id) }
                 }
                 .pickerStyle(.menu)
-                .onChange(of: state.lookID) { _, _ in onChange() }
+                .onChange(of: state.lookID) { _ in onChange() }
                 HStack {
                     Text("Intensität").font(.caption)
                     Slider(value: $state.lookIntensity, in: 0...1)
-                        .onChange(of: state.lookIntensity) { _, _ in onChange() }
+                        .onChange(of: state.lookIntensity) { _ in onChange() }
                 }
             }
             .padding(.horizontal)

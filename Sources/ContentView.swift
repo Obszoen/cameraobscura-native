@@ -24,7 +24,7 @@ struct ContentView: View {
         // when the view happens to be torn down — a live camera + Metal filters running
         // behind a locked screen is exactly the kind of thing that overheats a phone
         // and drains the battery for no reason anyone would notice until it's too late.
-        .onChange(of: scenePhase) { _, newPhase in
+        .onChange(of: scenePhase) { newPhase in
             switch newPhase {
             case .active: camera.start()
             default: camera.stop()
