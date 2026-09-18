@@ -5,6 +5,8 @@ import UIKit
 /// ("Kippschalter-Grafik statt Standard-Toggle"), the same reasoning as the rotary knobs:
 /// a plain system control reads as a placeholder next to a rendered metal panel.
 struct PanelToggle: View {
+    @EnvironmentObject var settings: AppSettings
+
     let title: String
     @Binding var isOn: Bool
     var accent: Color = Brand.mint
@@ -12,7 +14,13 @@ struct PanelToggle: View {
     var body: some View {
         Button {
             isOn.toggle()
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            // Switches click audibly when flipped, encoders don't — asked for directly
+            // ("wenn man an nem Encoder dreht soll kein Sound kommen... aber ein Switch
+            // schon"). RotaryKnob/ZoomFader deliberately have no equivalent sound call.
+            // Stronger than the encoders' feedback (asked for directly) — a switch flip
+            // should feel like a definite physical event, not a soft tap.
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            if settings.soundEnabled { CameraSounds.toggleClick() }
         } label: {
             VStack(spacing: 5) {
                 ZStack(alignment: isOn ? .trailing : .leading) {

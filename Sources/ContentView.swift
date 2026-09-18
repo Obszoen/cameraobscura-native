@@ -46,6 +46,7 @@ struct ContentView: View {
         }
         .animation(.spring(response: 0.38, dampingFraction: 0.86), value: showingAdjustments)
         .environmentObject(activeControl)
+        .environmentObject(settings)
         .onAppear { camera.start() }
         .onDisappear { camera.stop() }
         // Backgrounding the app must stop the camera/GPU pipeline immediately, not just
@@ -609,7 +610,8 @@ struct ContentView: View {
                         // as the knob track, an LED (not a thick ring) marks the selection.
                         Button {
                             camera.lookID = look.id
-                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                            if settings.soundEnabled { CameraSounds.toggleClick() }
                         } label: {
                             VStack(spacing: 4) {
                                 RoundedRectangle(cornerRadius: 8)
@@ -650,7 +652,8 @@ struct ContentView: View {
                 ForEach(ExportPreset.allCases.filter { $0 != .print }) { preset in
                     Button {
                         camera.frameGuide = preset
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        if settings.soundEnabled { CameraSounds.toggleClick() }
                     } label: {
                         Text(preset.label)
                             .font(.caption.bold())
@@ -680,6 +683,7 @@ struct ContentView: View {
                     camera.apply(preset)
                     shuffledPresetName = preset.name
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    if settings.soundEnabled { CameraSounds.toggleClick() }
                 } label: {
                     Label("Würfeln", systemImage: "dice.fill")
                         .font(.caption.bold())
@@ -702,6 +706,7 @@ struct ContentView: View {
                     Button {
                         camera.apply(preset)
                         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        if settings.soundEnabled { CameraSounds.toggleClick() }
                     } label: {
                         Text(preset.name)
                             .font(.caption.bold())

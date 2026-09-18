@@ -9,4 +9,7 @@ enum CameraSounds {
     static func shutter() { AudioServicesPlaySystemSound(1108) }
     static func recordStart() { AudioServicesPlaySystemSound(1117) }
     static func recordStop() { AudioServicesPlaySystemSound(1118) }
+    /// For rocker switches (PanelToggle) only, never encoders/knobs — asked for directly:
+    /// a physical switch makes an audible click when flipped, a rotary dial doesn't.
+    static func toggleClick() { AudioServicesPlaySystemSound(1104) }
 }
