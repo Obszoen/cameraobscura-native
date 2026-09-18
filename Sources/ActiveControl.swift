@@ -18,7 +18,13 @@ final class ActiveControl: ObservableObject {
     // after that particular view is re-rendered or discarded.
     private(set) var lastSetter: ((Double) -> Void)?
     private(set) var lastGetter: (() -> Double)?
-    private var lastLabel: String?
+    // Published (unlike the two closures above) — reported directly: the rotate gesture
+    // only ever adjusted "Schatten" with no way to see or change that binding, so it read
+    // as a random find rather than a real control. This drives a small persistent badge in
+    // the viewfinder showing which control a two-finger rotation currently targets, even
+    // when nothing is actively being dragged.
+    @Published private(set) var lastLabel: String?
+    @Published private(set) var lastAccent: Color = Brand.rose
 
     func begin(label: String, value: Double, accent: Color,
                setter: @escaping (Double) -> Void, getter: @escaping () -> Double) {
@@ -26,6 +32,7 @@ final class ActiveControl: ObservableObject {
         self.value = value
         self.accent = accent
         self.lastLabel = label
+        self.lastAccent = accent
         self.lastSetter = setter
         self.lastGetter = getter
     }

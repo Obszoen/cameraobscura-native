@@ -20,6 +20,10 @@ struct ContentView: View {
     @State private var pinchStartZoom: CGFloat?
     @State private var rotationStartValue: Double?
     @State private var lastCompositionPresetIndex: Int?
+    // Shown once, ever, per device — asked for directly: two custom gestures (rotate,
+    // double-tap-reset) had no explanation anywhere, so the good feel of the rotate
+    // gesture in particular "read as a random find" instead of an intentional control.
+    @AppStorage("com.danielschweiger.cameraobscura.hasSeenRotateHint") private var hasSeenRotateHint = false
     @State private var showGrid = false
     @State private var lastShuffleIndex: Int?
     @State private var shuffledPresetName: String?
@@ -197,6 +201,61 @@ struct ContentView: View {
                     .background(.black.opacity(0.4), in: RoundedRectangle(cornerRadius: 18))
                     .transition(.opacity.combined(with: .scale(scale: 0.92)))
                     .allowsHitTesting(false)
+                }
+
+                // A persistent (not just while dragging) badge showing which control a
+                // two-finger rotation on the viewfinder currently targets — reported
+                // directly: the gesture worked and felt good, but with nothing showing
+                // what it was bound to, it read as a random find, not a real control.
+                // Touching any knob/fader in the panel rebinds it; this is just visibility.
+                if let label = activeControl.lastLabel, activeControl.label == nil {
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Spacer()
+                            Label(label, systemImage: "arrow.triangle.2.circlepath")
+                                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                .foregroundStyle(activeControl.lastAccent)
+                                .padding(.horizontal, 10).padding(.vertical, 5)
+                                .background(.black.opacity(0.45), in: Capsule())
+                                .padding(.trailing, 12)
+                        }
+                        .padding(.bottom, 100)
+                    }
+                    .allowsHitTesting(false)
+                }
+
+                // Two custom gestures nowhere in the UI actually explains themselves —
+                // same problem as the rotate gesture, same fix, combined into one tip
+                // instead of two separate popups on first launch.
+                if !hasSeenRotateHint {
+                    VStack {
+                        Spacer()
+                        VStack(alignment: .leading, spacing: 10) {
+                            Label("Zwei-Finger-Dreh-Geste", systemImage: "hand.draw")
+                                .font(.caption.bold())
+                            Text("Mit zwei Fingern direkt im Sucher drehen, um den zuletzt berührten Regler zu verstellen — welcher das ist, siehst du unten rechts markiert.")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            Label("Doppeltipp auf einen Regler", systemImage: "hand.tap")
+                                .font(.caption.bold())
+                            Text("Setzt diesen einen Regler sofort auf seinen neutralen Wert zurück.")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            Button("Verstanden") {
+                                hasSeenRotateHint = true
+                            }
+                            .font(.caption.bold())
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 6)
+                            .background(Brand.rose, in: Capsule())
+                            .foregroundStyle(Brand.ground)
+                        }
+                        .padding(16)
+                        .background(.black.opacity(0.78), in: RoundedRectangle(cornerRadius: 16))
+                        .padding(.horizontal, 40)
+                        Spacer().frame(height: 160)
+                    }
                 }
             }
             .animation(.easeOut(duration: 0.15), value: activeControl.label)
