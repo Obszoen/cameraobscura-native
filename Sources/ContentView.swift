@@ -113,10 +113,12 @@ struct ContentView: View {
                 LevelLine(rollDegrees: camera.rollDegrees, accent: settings.levelLineColor)
                     .allowsHitTesting(false)
 
-                if camera.showCompositionCoach, let box = camera.personBoxNormalized {
-                    CompositionCoachOverlay(
-                        personBox: box,
-                        target: CompositionCoach.target(for: box, style: camera.compositionStyle),
+                if camera.showCompositionCoach, !camera.personBoxes.isEmpty {
+                    CompositionCoachMultiOverlay(
+                        personBoxes: camera.personBoxes,
+                        targets: camera.personBoxes.count > 1
+                            ? CompositionCoach.targets(for: camera.personBoxes)
+                            : [CompositionCoach.target(for: camera.personBoxes[0], style: camera.compositionStyle)],
                         bufferSize: camera.compositionFrameSize,
                         accent: settings.crosshairColor
                     )
@@ -128,8 +130,9 @@ struct ContentView: View {
                         Spacer()
                         Text(hint)
                             .font(.caption.bold())
+                            .multilineTextAlignment(.center)
                             .padding(.horizontal, 14).padding(.vertical, 8)
-                            .background(.black.opacity(0.6), in: Capsule())
+                            .background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 14))
                             .foregroundStyle(settings.crosshairColor)
                         Spacer().frame(height: 150)
                     }
@@ -258,7 +261,7 @@ struct ContentView: View {
 
             chromeButton("viewfinder", tint: camera.showCompositionCoach ? Brand.mint : .white) {
                 camera.showCompositionCoach.toggle()
-                if !camera.showCompositionCoach { camera.personBoxNormalized = nil }
+                if !camera.showCompositionCoach { camera.personBoxes = [] }
             }
 
             chromeButton("gearshape") {
@@ -287,12 +290,25 @@ struct ContentView: View {
             .pickerStyle(.segmented)
             .frame(maxWidth: 260)
 
-            Picker("Ziel-Komposition", selection: $camera.compositionStyle) {
-                Text("Drittel").tag(CameraModel.CompositionStyle.thirds)
-                Text("Zentriert").tag(CameraModel.CompositionStyle.centered)
+            // Five styles now (fashion/selfie/landscape added) — too many for a clean
+            // segmented control, so a chip row instead, same language as the look picker.
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(CameraModel.CompositionStyle.allCases, id: \.self) { style in
+                        Button {
+                            camera.compositionStyle = style
+                        } label: {
+                            Text(style.label)
+                                .font(.caption2.bold())
+                                .padding(.horizontal, 10).padding(.vertical, 5)
+                                .background(camera.compositionStyle == style ? Brand.mint.opacity(0.25) : Color.black.opacity(0.4))
+                                .foregroundStyle(camera.compositionStyle == style ? Brand.mint : .white.opacity(0.7))
+                                .clipShape(Capsule())
+                        }
+                    }
+                }
             }
-            .pickerStyle(.segmented)
-            .frame(maxWidth: 260)
+            .frame(maxWidth: 280)
         }
         .padding(.top, 6)
     }

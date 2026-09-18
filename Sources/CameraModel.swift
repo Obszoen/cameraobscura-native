@@ -107,11 +107,31 @@ final class CameraModel: NSObject, ObservableObject {
     // framing, not the artistic distortion). The overlay needs the actual buffer size to
     // correctly place the crosshair on screen, because the on-screen preview is a cropped
     // "fill" of that buffer, not a 1:1 mapping.
-    @Published var personBoxNormalized: CGRect?
+    // Every detected person, not just the first — asked for directly ("falls die Kamera
+    // mehr Menschen erkennt soll er die auch einweisen"). Order isn't guaranteed stable
+    // frame-to-frame by Vision, so CompositionCoach re-sorts by X position itself rather
+    // than assuming index N is the same physical person across frames.
+    @Published var personBoxes: [CGRect] = []
     @Published var compositionFrameSize: CGSize = .zero
 
     enum CoachMode: Hashable { case photographerMoves, subjectMoves }
-    enum CompositionStyle: Hashable { case thirds, centered }
+    /// Documented, publicly-known composition principles from editorial/fashion and
+    /// landscape photography — golden ratio, negative space, tighter crops, staggered
+    /// group arrangement — not literal parameters from any named photographer (no such
+    /// dataset is publicly accessible, and claiming otherwise would be fabricated).
+    enum CompositionStyle: Hashable, CaseIterable {
+        case thirds, centered, fashion, selfie, landscape
+
+        var label: String {
+            switch self {
+            case .thirds: return "Drittel"
+            case .centered: return "Zentriert"
+            case .fashion: return "Editorial"
+            case .selfie: return "Selfie"
+            case .landscape: return "Landschaft"
+            }
+        }
+    }
 
     // Before/after review, shown after a photo capture instead of saving immediately.
     @Published var reviewOriginal: UIImage?
@@ -808,16 +828,25 @@ final class CameraModel: NSObject, ObservableObject {
         let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .up, options: [:])
         visionQueue.async { [weak self] in
             try? handler.perform([request])
-            let box = (request.results as? [VNHumanObservation])?.first?.boundingBox
+            // Every person Vision finds, not just the first — capped at 6 so a crowd
+            // doesn't turn the panel into unreadable noise; sorted left-to-right so the
+            // numbering ("Person 1", "Person 2", ...) at least reads consistently within
+            // one analysis pass, even though Vision doesn't track identity across frames.
+            let boxes = ((request.results as? [VNHumanObservation]) ?? [])
+                .map(\.boundingBox)
+                .sorted { $0.midX < $1.midX }
+                .prefix(6)
+                .map { $0 }
             Task { @MainActor in
                 guard let self else { return }
                 self.isAnalyzingComposition = false
-                self.personBoxNormalized = box
+                self.personBoxes = boxes
                 self.compositionFrameSize = CGSize(width: width, height: height)
-                let distance = box.flatMap { self.distanceInMeters(atNormalizedPoint: CGPoint(x: $0.midX, y: $0.midY)) }
-                self.compositionHint = box.map {
-                    CompositionCoach.hint(for: $0, mode: self.coachMode, style: self.compositionStyle, distanceMeters: distance)
-                }
+                let distances = boxes.map { self.distanceInMeters(atNormalizedPoint: CGPoint(x: $0.midX, y: $0.midY)) }
+                self.compositionHint = CompositionCoach.hints(
+                    for: boxes, mode: self.coachMode, style: self.compositionStyle, distancesMeters: distances
+                ).joined(separator: "\n")
+                self.compositionHint = self.compositionHint?.isEmpty == true ? nil : self.compositionHint
             }
         }
     }

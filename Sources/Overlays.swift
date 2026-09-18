@@ -104,6 +104,39 @@ struct CompositionCoachOverlay: View {
     }
 }
 
+/// Composes one `CompositionCoachOverlay` per detected person — asked for directly ("falls
+/// die Kamera mehr Menschen erkennt soll er die auch einweisen"). Each gets a small numbered
+/// badge next to their subject dot once there's more than one, so "Person 2: einen Schritt
+/// nach links" in the hint text actually maps to a specific dot on screen.
+struct CompositionCoachMultiOverlay: View {
+    let personBoxes: [CGRect]
+    let targets: [CGPoint?]
+    let bufferSize: CGSize
+    let accent: Color
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                ForEach(personBoxes.indices, id: \.self) { i in
+                    CompositionCoachOverlay(personBox: personBoxes[i], target: targets[i],
+                                             bufferSize: bufferSize, accent: accent)
+                    if personBoxes.count > 1,
+                       let point = compositionScreenPoint(
+                        normalized: CGPoint(x: personBoxes[i].midX, y: personBoxes[i].maxY),
+                        bufferSize: bufferSize, viewSize: geo.size) {
+                        Text("\(i + 1)")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundStyle(.black)
+                            .frame(width: 16, height: 16)
+                            .background(accent, in: Circle())
+                            .position(x: point.x, y: point.y + 14)
+                    }
+                }
+            }
+        }
+    }
+}
+
 private struct CrosshairShape: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
@@ -131,15 +164,21 @@ struct FrameGuideOverlay: View {
     var body: some View {
         GeometryReader { geo in
             let frameSize = geo.size
-            let currentAspect = frameSize.width / frameSize.height
-            let guideRect: CGRect
-            if currentAspect > aspectRatio {
-                let width = frameSize.height * aspectRatio
-                guideRect = CGRect(x: (frameSize.width - width) / 2, y: 0, width: width, height: frameSize.height)
-            } else {
-                let height = frameSize.width / aspectRatio
-                guideRect = CGRect(x: 0, y: (frameSize.height - height) / 2, width: frameSize.width, height: height)
-            }
+            // Computed via an immediately-invoked plain closure, not an if/else statement
+            // directly in this body — GeometryReader's content closure is @ViewBuilder, and
+            // an if/else that ASSIGNS to a variable (rather than producing a View per
+            // branch) doesn't compile there; wrapping it takes it out of ViewBuilder's
+            // control-flow parsing entirely, back to ordinary Swift.
+            let guideRect: CGRect = {
+                let currentAspect = frameSize.width / frameSize.height
+                if currentAspect > aspectRatio {
+                    let width = frameSize.height * aspectRatio
+                    return CGRect(x: (frameSize.width - width) / 2, y: 0, width: width, height: frameSize.height)
+                } else {
+                    let height = frameSize.width / aspectRatio
+                    return CGRect(x: 0, y: (frameSize.height - height) / 2, width: frameSize.width, height: height)
+                }
+            }()
             ZStack {
                 Path { path in
                     path.addRect(CGRect(origin: .zero, size: frameSize))

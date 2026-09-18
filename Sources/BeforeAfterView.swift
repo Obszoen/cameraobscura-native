@@ -68,13 +68,25 @@ struct BeforeAfterView: View {
                     .multilineTextAlignment(.center)
                     .padding(.horizontal)
 
-                Picker("Ausgabegröße", selection: $exportPreset) {
-                    ForEach(ExportPreset.allCases) { preset in
-                        Text(preset.label).tag(preset)
+                // Six presets now (16:9/4:3/panorama added) — a chip row instead of
+                // `.segmented`, which would cram six labels unreadably into one bar.
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(ExportPreset.allCases) { preset in
+                            Button {
+                                exportPreset = preset
+                            } label: {
+                                Text(preset.label)
+                                    .font(.caption.bold())
+                                    .padding(.horizontal, 12).padding(.vertical, 8)
+                                    .background(exportPreset == preset ? Brand.rose.opacity(0.3) : Color.white.opacity(0.08))
+                                    .foregroundStyle(exportPreset == preset ? Brand.rose : .white.opacity(0.75))
+                                    .clipShape(Capsule())
+                            }
+                        }
                     }
+                    .padding(.horizontal)
                 }
-                .pickerStyle(.segmented)
-                .padding(.horizontal)
 
                 Toggle("Auch Original behalten", isOn: $alsoSaveOriginal)
                     .toggleStyle(.switch)
@@ -100,6 +112,21 @@ struct BeforeAfterView: View {
                     }
                     .background(Brand.rose).foregroundStyle(.white).clipShape(RoundedRectangle(cornerRadius: 12))
                 }
+                .padding(.horizontal)
+
+                // The system share sheet, not a hand-rolled per-platform integration —
+                // asked for directly ("teilbar mit den häufigsten... Insta, Facebook, Kick,
+                // TikTok, Etsy, Pinterest, X, LinkedIn"), and this is how every one of those
+                // actually gets covered: any installed app that accepts image content
+                // registers itself here automatically, nothing to hand-wire per platform.
+                ShareLink(
+                    item: Image(uiImage: exportPreset.apply(to: camera.reviewProcessed ?? UIImage())),
+                    preview: SharePreview("CameraObscura-Foto", image: Image(uiImage: exportPreset.apply(to: camera.reviewProcessed ?? UIImage())))
+                ) {
+                    Label("Teilen", systemImage: "square.and.arrow.up")
+                        .frame(maxWidth: .infinity).padding()
+                }
+                .background(Brand.mint.opacity(0.2)).foregroundStyle(Brand.mint).clipShape(RoundedRectangle(cornerRadius: 12))
                 .padding(.horizontal)
                 .padding(.bottom)
             }
