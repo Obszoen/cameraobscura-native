@@ -6,8 +6,15 @@ import SwiftUI
 struct BeforeAfterView: View {
     @ObservedObject var camera: CameraModel
     @State private var dividerX: CGFloat = 0.5
-    @State private var exportPreset: ExportPreset = .original
+    // Pre-selected from the live viewfinder framing guide (still fully changeable here —
+    // the sensor always captured the full frame, this is only the starting suggestion).
+    @State private var exportPreset: ExportPreset
     @State private var alsoSaveOriginal = false
+
+    init(camera: CameraModel) {
+        self.camera = camera
+        _exportPreset = State(initialValue: camera.frameGuide)
+    }
 
     var body: some View {
         VStack(spacing: 16) {

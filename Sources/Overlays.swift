@@ -120,6 +120,41 @@ private struct CrosshairShape: Shape {
     }
 }
 
+/// Dims the area outside the chosen export aspect ratio — a live preview of the same crop
+/// choice already made on the review screen (`ExportPreset`), asked for directly: know in
+/// advance how it'll look, without the sensor actually capturing anything less than the
+/// full frame. The crop itself stays fully non-destructive and changeable after the shot,
+/// exactly as before — this is guidance, not a hard limit.
+struct FrameGuideOverlay: View {
+    let aspectRatio: CGFloat // width / height
+
+    var body: some View {
+        GeometryReader { geo in
+            let frameSize = geo.size
+            let currentAspect = frameSize.width / frameSize.height
+            let guideRect: CGRect
+            if currentAspect > aspectRatio {
+                let width = frameSize.height * aspectRatio
+                guideRect = CGRect(x: (frameSize.width - width) / 2, y: 0, width: width, height: frameSize.height)
+            } else {
+                let height = frameSize.width / aspectRatio
+                guideRect = CGRect(x: 0, y: (frameSize.height - height) / 2, width: frameSize.width, height: height)
+            }
+            ZStack {
+                Path { path in
+                    path.addRect(CGRect(origin: .zero, size: frameSize))
+                    path.addRect(guideRect)
+                }
+                .fill(.black.opacity(0.55), style: FillStyle(eoFill: true))
+                Rectangle()
+                    .stroke(.white.opacity(0.7), lineWidth: 1)
+                    .frame(width: guideRect.width, height: guideRect.height)
+                    .position(x: guideRect.midX, y: guideRect.midY)
+            }
+        }
+    }
+}
+
 /// A horizon level line, the same idea as the native Camera app's — but split into two
 /// segments with a gap at the exact center instead of one solid bar. Asked for directly:
 /// a full line straight across the middle of the frame sits right over whatever the

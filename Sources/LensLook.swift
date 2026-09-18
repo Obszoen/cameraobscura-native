@@ -65,6 +65,17 @@ struct LensLook: Identifiable {
                   mul: (0.30, 1.35, 0.30), off: (-15, 25, -15), saturation: 0.35, contrast: 1.30),
         LensLook(id: "negativ", name: "Negativ", subtitle: "Farben umgekehrt",
                   mul: (-1.00, -1.00, -1.00), off: (255, 255, 255), saturation: 1.00, contrast: 1.00),
+        // Four more, chosen for being genuinely recognizable real camera/process
+        // characters (not just palette variations of what's already here) — described
+        // generically rather than by brand, same legal reasoning as the rename earlier.
+        LensLook(id: "disposable", name: "Einweg-Partyblitz", subtitle: "harter Direktblitz, warmer Stich, ausgefressene Lichter",
+                  mul: (1.12, 1.02, 0.88), off: (14, 6, -6), saturation: 1.10, contrast: 1.22),
+        LensLook(id: "ccdDigicam", name: "CCD-Digicam 2008", subtitle: "leicht überschärft, kühl, Y2K-Kompaktkamera",
+                  mul: (0.96, 1.00, 1.06), off: (0, 0, 4), saturation: 1.08, contrast: 1.10),
+        LensLook(id: "crossProcess", name: "Kreuzentwicklung", subtitle: "giftgrüne Schatten, Cyan-Lichter",
+                  mul: (1.00, 1.12, 0.85), off: (-6, 8, 6), saturation: 1.25, contrast: 1.30),
+        LensLook(id: "expiredStock", name: "Abgelaufener Film", subtitle: "verblasst, Farbstich, Lichteinfall-Charme",
+                  mul: (1.06, 0.98, 1.04), off: (10, 4, 14), saturation: 0.72, contrast: 0.82),
     ]
 
     /// Builds the CIFilter chain for this look: color matrix (channel gain + offset) → saturation/contrast.

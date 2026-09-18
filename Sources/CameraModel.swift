@@ -52,6 +52,18 @@ final class CameraModel: NSObject, ObservableObject {
     @Published var warmth: Double = 0.5
     @Published var highlights: Double = 0.5
     @Published var shadows: Double = 0.5
+    // A real, continuously scaling "pull it back toward natural" dial — asked for
+    // directly. 0 = every other tone knob applies at full strength (default, changes
+    // nothing on its own); 1 = contrast and saturation deviations from neutral are damped
+    // by 60%, so an over-dialed combination of other knobs reads as gentler without
+    // needing to hunt down and undo each one individually. Genuinely visible across its
+    // whole range, unlike a knob that only does something at one end.
+    @Published var naturalness: Double = 0
+    // Purely a viewfinder framing guide ("man weiß im Vorfeld wie es rauskommt") — the
+    // sensor always captures the full frame regardless, and the actual crop is still
+    // chosen (or changed) non-destructively on the review screen afterward, exactly like
+    // before. This just previews the same choice live instead of only after the shot.
+    @Published var frameGuide: ExportPreset = .original
     // Automatic overexposure correction — asked for directly ("was kann unsere Fotoapp tun
     // wenn Objekte zu überbelichtet sind"), off by default and independently toggleable
     // from the manual "Lichter" knob above, which it quietly drives rather than duplicates.
@@ -478,7 +490,13 @@ final class CameraModel: NSObject, ObservableObject {
     /// FisheyeFilter.swift) — a real optical model, not a generic
     /// radial bump. Uses the live depth map for depth-aware distortion on LiDAR devices.
     private func applyFisheye(to image: CIImage) -> CIImage {
-        guard fisheyeStrength > 0.001 else { return image }
+        // Bug found while chasing "vignette macht kaum einen Unterschied", reported
+        // directly: this whole pipeline — including chromatic aberration AND vignette,
+        // both applied inside FisheyeFilter.apply below — used to be gated on fisheyeStrength
+        // alone. With fisheye dialed down/off (its own reset point is 0, unlike vignette's),
+        // vignette and chroma silently did nothing no matter what they were set to, even
+        // though they're independent knobs now. Gate on all three together instead.
+        guard fisheyeStrength > 0.001 || chromaticAberration > 0.001 || vignetteAmount > 0.001 else { return image }
         return FisheyeFilter.shared.apply(
             to: image,
             strength: fisheyeStrength,
@@ -499,11 +517,17 @@ final class CameraModel: NSObject, ObservableObject {
         var out = image
 
         if abs(brightness - 0.5) > 0.003 || abs(contrast - 0.5) > 0.003 || abs(saturation - 0.5) > 0.003 {
+            // Naturalness damps how far contrast/saturation are allowed to stray from
+            // their own neutral point (1.0), scaling both raw values toward it — applied
+            // here, before the filter call, so it's one multiply, not a second pass.
+            let pull = naturalness * 0.6
+            let rawContrast = 0.6 + contrast * 1.0
+            let rawSaturation = saturation * 2.0
             let colorControls = CIFilter(name: "CIColorControls")!
             colorControls.setValue(out, forKey: kCIInputImageKey)
             colorControls.setValue((brightness - 0.5) * 0.7, forKey: kCIInputBrightnessKey)  // -0.35...0.35
-            colorControls.setValue(0.6 + contrast * 1.0, forKey: kCIInputContrastKey)         // 0.6...1.6
-            colorControls.setValue(saturation * 2.0, forKey: kCIInputSaturationKey)           // 0 (gray)...2.0
+            colorControls.setValue(1.0 + (rawContrast - 1.0) * (1 - pull), forKey: kCIInputContrastKey)
+            colorControls.setValue(1.0 + (rawSaturation - 1.0) * (1 - pull), forKey: kCIInputSaturationKey)
             out = colorControls.outputImage ?? out
         }
 

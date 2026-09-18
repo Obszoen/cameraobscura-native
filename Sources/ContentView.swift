@@ -105,6 +105,11 @@ struct ContentView: View {
                         .allowsHitTesting(false)
                 }
 
+                if let aspect = camera.frameGuide.aspectRatio {
+                    FrameGuideOverlay(aspectRatio: aspect)
+                        .allowsHitTesting(false)
+                }
+
                 LevelLine(rollDegrees: camera.rollDegrees, accent: settings.levelLineColor)
                     .allowsHitTesting(false)
 
@@ -385,6 +390,15 @@ struct ContentView: View {
 
                 PanelGroove()
 
+                // Live framing guide, asked for directly — the sensor still captures the
+                // full frame regardless (see ExportPreset.apply), this only previews the
+                // crop choice, still fully changeable after the shot on the review screen.
+                PanelLegend(text: "Rahmen")
+                PanelTicks()
+                frameGuidePicker
+
+                PanelGroove()
+
                 // The baseline every pro photo app leads with (Belichtung/Kontrast/
                 // Sättigung/Schärfe, Weißabgleich/Lichter/Schatten) — asked for directly,
                 // named "Tonwerte" rather than "Ton" so it doesn't read as the audio toggle
@@ -559,6 +573,10 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity)
             RotaryKnob(title: "Schatten", value: $camera.shadows)
                 .frame(maxWidth: .infinity)
+            // Continuously damps how far contrast/saturation stray from neutral — a real,
+            // visible-across-its-whole-range dial, not just an on/off — asked for directly.
+            RotaryKnob(title: "Natürlichkeit", value: $camera.naturalness, accent: Brand.rose, neutralValue: 0)
+                .frame(maxWidth: .infinity)
         }
     }
 
@@ -606,6 +624,27 @@ struct ContentView: View {
                 Text("\(current.name) · \(current.subtitle)")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var frameGuidePicker: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(ExportPreset.allCases.filter { $0 != .print }) { preset in
+                    Button {
+                        camera.frameGuide = preset
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    } label: {
+                        Text(preset.label)
+                            .font(.caption.bold())
+                            .padding(.horizontal, 12).padding(.vertical, 8)
+                            .background(camera.frameGuide == preset ? Brand.rose.opacity(0.25) : Color.white.opacity(0.05))
+                            .foregroundStyle(camera.frameGuide == preset ? Brand.rose : .white.opacity(0.75))
+                            .overlay(Capsule().strokeBorder(camera.frameGuide == preset ? Brand.rose : .white.opacity(0.12), lineWidth: 1))
+                            .clipShape(Capsule())
+                    }
+                }
             }
         }
     }

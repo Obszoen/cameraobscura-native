@@ -3,15 +3,31 @@ import UIKit
 /// Ready-made export targets picked on the review screen, right before saving —
 /// the moment people actually decide what a photo is for.
 enum ExportPreset: String, CaseIterable, Identifiable {
-    case original, story, print
+    case original, story, landscape169, classic43, panorama, print
 
     var id: String { rawValue }
 
     var label: String {
         switch self {
-        case .original: return "Originalgröße (verlustfrei)"
-        case .story: return "Story (9:16, Sicherheitszone)"
+        case .original: return "Original (voller Sensor)"
+        case .story: return "Story (9:16)"
+        case .landscape169: return "Breit (16:9)"
+        case .classic43: return "Klassisch (4:3)"
+        case .panorama: return "Panorama (2.4:1)"
         case .print: return "Print (hohe Auflösung, sRGB)"
+        }
+    }
+
+    /// Width/height ratio for the live viewfinder framing guide — nil for the two presets
+    /// that aren't a fixed crop shape (original = no guide needed, print = a resolution
+    /// target, not an aspect ratio).
+    var aspectRatio: CGFloat? {
+        switch self {
+        case .original, .print: return nil
+        case .story: return 9.0 / 16.0
+        case .landscape169: return 16.0 / 9.0
+        case .classic43: return 4.0 / 3.0
+        case .panorama: return 2.4 / 1.0
         }
     }
 
@@ -19,10 +35,11 @@ enum ExportPreset: String, CaseIterable, Identifiable {
         switch self {
         case .original:
             return image
-        case .story:
-            return Self.cropped(image, toAspect: 9.0 / 16.0)
         case .print:
             return Self.upscaledForPrint(image)
+        default:
+            guard let aspectRatio else { return image }
+            return Self.cropped(image, toAspect: aspectRatio)
         }
     }
 
