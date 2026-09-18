@@ -21,7 +21,7 @@ enum CuratedPresets {
         preset("Entrückt Infrarot", .rollei, fisheye: 0.5, intensity: 0.85, chroma: 0.3, vignette: 0.45, grain: true, circle: false, auto: true),
         preset("Dramatisches Rot-Schwarz", .noir, fisheye: 0.6, intensity: 1.0, chroma: 0.5, vignette: 0.65, grain: true, circle: false, auto: false),
         preset("Hartes Actionkino", .bleach, fisheye: 0.5, intensity: 0.9, chroma: 0.2, vignette: 0.5, grain: true, circle: false, auto: false),
-        preset("Technicolor Klassiker", .technicolor, fisheye: 0.4, intensity: 1.0, chroma: 0.15, vignette: 0.35, grain: false, circle: false, auto: true),
+        preset("Dreifarbiger Filmklassiker", .technicolor, fisheye: 0.4, intensity: 1.0, chroma: 0.15, vignette: 0.35, grain: false, circle: false, auto: true),
         preset("Historisches Archiv", .sepia, fisheye: 0.45, intensity: 0.9, chroma: 0.1, vignette: 0.55, grain: true, circle: true, auto: true),
         preset("Zirkulares Fisheye-Extrem", .none, fisheye: 1.0, intensity: 0, chroma: 0.7, vignette: 0.75, grain: false, circle: true, auto: true),
         preset("Sanfter Alltag", .none, fisheye: 0.2, intensity: 0, chroma: 0.05, vignette: 0.15, grain: false, circle: false, auto: true),

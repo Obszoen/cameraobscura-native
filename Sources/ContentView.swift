@@ -463,6 +463,8 @@ struct ContentView: View {
                 selfTimerSeconds = selfTimerSeconds == 0 ? 3 : (selfTimerSeconds == 3 ? 10 : 0)
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
             }
+            .disabled(mode == .video)
+            .opacity(mode == .video ? 0.35 : 1)
             .overlay(alignment: .bottomTrailing) {
                 if selfTimerSeconds > 0 {
                     Text("\(selfTimerSeconds)")
@@ -582,6 +584,8 @@ struct ContentView: View {
                 Spacer()
 
                 chromeButton("arrow.triangle.2.circlepath.camera") { camera.switchCamera() }
+                    .disabled(camera.isRecording)
+                    .opacity(camera.isRecording ? 0.35 : 1)
             }
             .padding(.horizontal, 32)
         }

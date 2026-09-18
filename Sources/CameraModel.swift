@@ -186,6 +186,8 @@ final class CameraModel: NSObject, ObservableObject {
     private var currentDevice: AVCaptureDevice?
     private var currentAudioDevice: AVCaptureDevice?
     private var recordingTimer: Timer?
+    private var isStarted = false
+    private var latestVideoFrameSize: CGSize = .zero
 
     // Thermal/battery guard: the live preview does not need the full sensor frame rate to
     // look smooth to the eye, so we halve the processing rate whenever we're only showing a
@@ -277,6 +279,8 @@ final class CameraModel: NSObject, ObservableObject {
     }
 
     func start() {
+        guard !isStarted else { return }
+        isStarted = true
         configureAudioSession()
         sessionQueue.async { [weak self] in
             self?.configureSession()
@@ -313,6 +317,8 @@ final class CameraModel: NSObject, ObservableObject {
     }
 
     func stop() {
+        guard isStarted else { return }
+        isStarted = false
         if isRecording { stopRecording() } // finish the file cleanly before tearing the session down
         sessionQueue.async { [weak self] in
             self?.session.stopRunning()
@@ -711,6 +717,7 @@ final class CameraModel: NSObject, ObservableObject {
     private var expectingRawCapture = false
 
     func capturePhoto() {
+        lastSaveOK = nil
         var settings = AVCapturePhotoSettings()
 
         if proRAWEnabled, photoOutput.isAppleProRAWEnabled,
@@ -743,31 +750,43 @@ final class CameraModel: NSObject, ObservableObject {
     }
 
     func startRecording() {
+        lastSaveOK = nil
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".mov")
         try? FileManager.default.removeItem(at: url)
 
-        guard let writer = try? AVAssetWriter(outputURL: url, fileType: .mov) else { return }
+        guard let writer = try? AVAssetWriter(outputURL: url, fileType: .mov) else {
+            lastSaveOK = false
+            return
+        }
 
-        // Read the real active format instead of hardcoding 1080×1920: with the session on
-        // .photo (for full-resolution stills) the delivered frames are the device's actual
-        // sensor size, not 1080p, and that varies by device/lens. Swapped width/height
-        // because the capture connection is locked to .portrait, so AVFoundation delivers
-        // already-rotated portrait pixel buffers — writer dimensions that don't match what's
-        // actually appended would silently crop the video to the top-left corner.
+        // Use the dimensions of the actual delivered pixel buffer. `videoOrientation` is
+        // connection metadata; it does not rotate the CVPixelBuffer itself. The previous
+        // implementation swapped active-format width/height and could therefore give the
+        // writer a portrait size for a landscape buffer, causing cropping or a failed append.
+        let sourceWidth = Int(latestVideoFrameSize.width)
+        let sourceHeight = Int(latestVideoFrameSize.height)
         let sensorDims = currentDevice?.activeFormat.formatDescription.dimensions
-        let portraitWidth = Int(sensorDims?.height ?? 1080)
-        let portraitHeight = Int(sensorDims?.width ?? 1920)
+        let width = sourceWidth > 0 ? sourceWidth : Int(sensorDims?.width ?? 1920)
+        let height = sourceHeight > 0 ? sourceHeight : Int(sensorDims?.height ?? 1080)
         let videoSettings: [String: Any] = [
             AVVideoCodecKey: AVVideoCodecType.h264,
-            AVVideoWidthKey: portraitWidth,
-            AVVideoHeightKey: portraitHeight,
+            AVVideoWidthKey: width,
+            AVVideoHeightKey: height,
         ]
         let videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
         videoInput.expectsMediaDataInRealTime = true
+        // Preserve portrait presentation in movie metadata rather than rotating every
+        // frame on the CPU. The pixel buffer itself remains sensor-native landscape.
+        if width > height {
+            videoInput.transform = CGAffineTransform(rotationAngle: .pi / 2)
+        }
         let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: videoInput, sourcePixelBufferAttributes: [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
         ])
-        guard writer.canAdd(videoInput) else { return }
+        guard writer.canAdd(videoInput) else {
+            lastSaveOK = false
+            return
+        }
         writer.add(videoInput)
 
         var audioInput: AVAssetWriterInput?
@@ -825,13 +844,18 @@ final class CameraModel: NSObject, ObservableObject {
 
     private func saveVideo(at url: URL) {
         PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
-            guard status == .authorized || status == .limited else { return }
+            guard status == .authorized || status == .limited else {
+                Task { @MainActor in self.lastSaveOK = false }
+                return
+            }
             PHPhotoLibrary.shared().performChanges({
                 let options = PHAssetResourceCreationOptions()
                 options.shouldMoveFile = true
                 let request = PHAssetCreationRequest.forAsset()
                 request.addResource(with: .video, fileURL: url, options: options)
-            }, completionHandler: nil)
+            }) { success, _ in
+                Task { @MainActor in self.lastSaveOK = success }
+            }
         }
     }
 
@@ -976,6 +1000,8 @@ extension CameraModel: AVCaptureVideoDataOutputSampleBufferDelegate {
                 if self.frameCounter % self.previewFrameSkip != 0 { return }
             }
             let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+            self.latestVideoFrameSize = CGSize(width: CVPixelBufferGetWidth(pixelBuffer),
+                                               height: CVPixelBufferGetHeight(pixelBuffer))
             let processed = self.process(ciImage)
             // Building this CIImage recipe is cheap — no GPU render happens here. The
             // viewfinder (MetalPreviewView) renders it on its own Metal draw loop, and

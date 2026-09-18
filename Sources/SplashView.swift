@@ -56,6 +56,25 @@ struct SplashView: View {
                     .frame(width: 240, height: 240)
                     .clipShape(Circle())
                     .overlay(Circle().stroke(.white.opacity(0.12), lineWidth: 2))
+                    // The rendered clip is opaque. Keep it out of the lens until the
+                    // shutter moment, otherwise it covers the 0–1.5s reflection before
+                    // playback even starts.
+                    .opacity(playAperture ? 1 : 0)
+
+                // Let the complementary color sweep read as light passing through the
+                // opening, instead of leaving the center monochrome while the gradient
+                // only glows behind the opaque video layer.
+                AngularGradient(
+                    colors: [Brand.rose, Brand.mint, Brand.skyBlue,
+                             Color(red: 0.94, green: 0.88, blue: 0.74), Brand.rose],
+                    center: .center,
+                    angle: .degrees(gradientProgress * 140)
+                )
+                .frame(width: 224, height: 224)
+                .clipShape(Circle())
+                .opacity(gradientProgress * 0.28)
+                .blendMode(.plusLighter)
+                .allowsHitTesting(false)
 
                 Circle()
                     .fill(.white)
