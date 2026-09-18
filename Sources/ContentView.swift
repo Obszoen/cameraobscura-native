@@ -20,6 +20,13 @@ struct ContentView: View {
     @State private var pinchStartZoom: CGFloat?
     @State private var rotationStartValue: Double?
     @State private var selfieSwipeStartValue: Double?
+    @State private var captureFlash = false
+    @State private var savedThumbnail: UIImage?
+    @State private var showTimerCountdown = false
+    @State private var timerSecondsLeft = 0
+    @AppStorage("com.danielschweiger.cameraobscura.selfTimerSeconds") private var selfTimerSeconds = 0 // 0 = off
+    @AppStorage("com.danielschweiger.cameraobscura.hasSeenPrivacyNote") private var hasSeenPrivacyNote = false
+    @State private var showingPrivacyNote = false
     @State private var lastCompositionPresetIndex: Int?
     // Shown once, ever, per device — asked for directly: two custom gestures (rotate,
     // double-tap-reset) had no explanation anywhere, so the good feel of the rotate
@@ -64,6 +71,21 @@ struct ContentView: View {
             case .active: camera.start()
             default: camera.stop()
             }
+        }
+        // `.onReceive`, not `.onChange(of:)` — UIImage isn't Equatable, which
+        // `.onChange(of:perform:)` requires; Combine's publisher has no such constraint.
+        .onReceive(camera.$lastSavedThumbnail) { thumb in
+            guard thumb != nil else { return }
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) { savedThumbnail = thumb }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                withAnimation(.easeOut(duration: 0.3)) { savedThumbnail = nil }
+            }
+        }
+        .onAppear {
+            if !hasSeenPrivacyNote { showingPrivacyNote = true }
+        }
+        .sheet(isPresented: $showingPrivacyNote, onDismiss: { hasSeenPrivacyNote = true }) {
+            PrivacyNoteSheet()
         }
         .fullScreenCover(isPresented: Binding(
             get: { camera.reviewProcessed != nil },
@@ -159,6 +181,59 @@ struct ContentView: View {
                         .padding(.top, 60)
                         .padding(.horizontal)
                         Spacer()
+                    }
+                }
+
+                Color.white
+                    .opacity(captureFlash ? 0.85 : 0)
+                    .allowsHitTesting(false)
+                    .blendMode(.plusLighter)
+
+                if showTimerCountdown {
+                    ZStack {
+                        Circle()
+                            .trim(from: 0, to: CGFloat(timerSecondsLeft) / CGFloat(max(selfTimerSeconds, 1)))
+                            .stroke(Brand.rose, style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                            .rotationEffect(.degrees(-90))
+                            .frame(width: 90, height: 90)
+                            .animation(.linear(duration: 1), value: timerSecondsLeft)
+                        Text("\(timerSecondsLeft)")
+                            .font(.system(size: 40, weight: .bold, design: .monospaced))
+                            .foregroundStyle(.white)
+                    }
+                    .allowsHitTesting(false)
+                }
+
+                if camera.showHistogram, let histogram = camera.liveHistogram {
+                    VStack {
+                        HistogramView(bins: histogram)
+                            .frame(width: 140, height: 50)
+                            .padding(6)
+                            .background(.black.opacity(0.45), in: RoundedRectangle(cornerRadius: 8))
+                            .padding(.top, 60)
+                            .padding(.trailing, 12)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                        Spacer()
+                    }
+                    .allowsHitTesting(false)
+                }
+
+                if let thumb = savedThumbnail {
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Image(uiImage: thumb)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 44, height: 44)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                .overlay(RoundedRectangle(cornerRadius: 8).stroke(.white.opacity(0.6), lineWidth: 1))
+                                .shadow(radius: 4)
+                                .padding(.leading, 16)
+                                .padding(.bottom, 100)
+                                .transition(.scale.combined(with: .opacity))
+                            Spacer()
+                        }
                     }
                 }
 
@@ -364,6 +439,29 @@ struct ContentView: View {
                 if !camera.showCompositionCoach { camera.personBoxes = [] }
             }
 
+            chromeButton("waveform", tint: camera.showHistogram ? Brand.skyBlue : .white) {
+                camera.showHistogram.toggle()
+                if !camera.showHistogram { camera.liveHistogram = nil }
+            }
+
+            // Cycles 0 (off) -> 3s -> 10s -> off — asked for directly ("Selbstauslöser
+            // (3s/10s) mit sichtbarem Countdown-Ring").
+            chromeButton(selfTimerSeconds == 0 ? "timer" : "timer.circle.fill",
+                         tint: selfTimerSeconds > 0 ? Brand.rose : .white) {
+                selfTimerSeconds = selfTimerSeconds == 0 ? 3 : (selfTimerSeconds == 3 ? 10 : 0)
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if selfTimerSeconds > 0 {
+                    Text("\(selfTimerSeconds)")
+                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Brand.ground)
+                        .padding(2)
+                        .background(Brand.rose, in: Circle())
+                        .offset(x: 2, y: 2)
+                }
+            }
+
             chromeButton("gearshape") {
                 showingSettings = true
             }
@@ -383,6 +481,7 @@ struct ContentView: View {
     /// to make the coach feel adjustable): who moves, and what composition it aims for.
     private var coachModeSwitch: some View {
         VStack(spacing: 6) {
+            HelpButton(text: "Der Composition Coach zeigt ein Fadenkreuz zum idealen Bildaufbau. 'Ich filme' spricht dich als Fotograf an, 'Ich bin im Bild' spricht die Person im Bild direkt an. Darunter: Stil (Drittel/Editorial/...) oder eines von 47 präzisen Presets würfeln.")
             Picker("Wer bewegt sich?", selection: $camera.coachMode) {
                 Text("Ich filme").tag(CameraModel.CoachMode.photographerMoves)
                 Text("Ich bin im Bild").tag(CameraModel.CoachMode.subjectMoves)
@@ -490,8 +589,11 @@ struct ContentView: View {
     private var captureButton: some View {
         Button {
             if mode == .photo {
-                if settings.soundEnabled { CameraSounds.shutter() }
-                camera.capturePhoto()
+                if selfTimerSeconds > 0 {
+                    startSelfTimerAndCapture()
+                } else {
+                    fireShutter()
+                }
             } else if camera.isRecording {
                 if settings.soundEnabled { CameraSounds.recordStop() }
                 camera.stopRecording()
@@ -509,6 +611,35 @@ struct ContentView: View {
                 }
             }
         }
+    }
+
+    private func fireShutter() {
+        if settings.soundEnabled { CameraSounds.shutter() }
+        // A one-frame flash on the viewfinder itself, like a real shutter — asked for
+        // directly, on top of the sound/haptic that already fire.
+        withAnimation(.easeOut(duration: 0.06)) { captureFlash = true }
+        withAnimation(.easeIn(duration: 0.15).delay(0.06)) { captureFlash = false }
+        camera.capturePhoto()
+    }
+
+    /// Counts down `selfTimerSeconds`, one haptic tick per second, then fires — asked for
+    /// directly ("Selbstauslöser (3s/10s) mit sichtbarem Countdown-Ring").
+    private func startSelfTimerAndCapture() {
+        timerSecondsLeft = selfTimerSeconds
+        showTimerCountdown = true
+        func tick() {
+            guard timerSecondsLeft > 0 else {
+                showTimerCountdown = false
+                fireShutter()
+                return
+            }
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                timerSecondsLeft -= 1
+                tick()
+            }
+        }
+        tick()
     }
 
     // MARK: - Adjustments panel (fisheye/look/presets) — everything that used to be a
@@ -549,7 +680,11 @@ struct ContentView: View {
                 // Sättigung/Schärfe, Weißabgleich/Lichter/Schatten) — asked for directly,
                 // named "Tonwerte" rather than "Ton" so it doesn't read as the audio toggle
                 // below in "Modi".
-                PanelLegend(text: "Tonwerte")
+                HStack(spacing: 4) {
+                    PanelLegend(text: "Tonwerte")
+                    HelpButton(text: "Alle sieben Regler sind bei 50% neutral (unverändert) — nach links = weniger, nach rechts = mehr. 'Natürlichkeit' zieht Kontrast/Sättigung sanft zurück, falls die anderen Regler zusammen zu stark wirken.")
+                    Spacer()
+                }
                 PanelTicks()
                 toneKnobRowPrimary
                 toneKnobRowSecondary

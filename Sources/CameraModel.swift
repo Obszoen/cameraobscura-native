@@ -13,7 +13,14 @@ final class CameraModel: NSObject, ObservableObject {
     @Published var latestFrame: CIImage?
     @Published var isUsingFrontCamera = false
     @Published var fisheyeStrength: Double = 0.55       // 0...1, matches the web version's slider
-    @Published var lookID: String = "none"
+    @Published var lookID: String = "none" {
+        // Remember the last-used look across launches — asked for directly ("zuletzt
+        // verwendetes Preset/Style merken statt bei jedem App-Start auf 'Original'
+        // zurückzufallen"). Only the look ID, not the full dial-in (fisheye/tone/etc
+        // still reset per session — those are usually deliberate per-shot choices, the
+        // look is the one thing people pick once and expect to stick).
+        didSet { UserDefaults.standard.set(lookID, forKey: "com.danielschweiger.cameraobscura.lastLookID") }
+    }
     @Published var lookIntensity: Double = 0.8
     @Published var autoEnhance = true
     @Published var circleMask = false
@@ -32,6 +39,7 @@ final class CameraModel: NSObject, ObservableObject {
     // step to mark or snap to".
     @Published var nativeZoomFactors: [CGFloat] = []
     @Published var lastSaveOK: Bool?
+    @Published var lastSavedThumbnail: UIImage?
     @Published var isRecording = false
     @Published var recordingSeconds: Int = 0
     @Published var chromaticAberration: Double = 0.6
@@ -69,6 +77,12 @@ final class CameraModel: NSObject, ObservableObject {
     // from the manual "Lichter" knob above, which it quietly drives rather than duplicates.
     @Published var autoExposureCorrection = false
     private var exposureCheckCounter = 0
+    // Live luminance histogram — asked for directly ("Histogramm-Overlay statt blind auf
+    // Belichtung zu vertrauen"). Off by default (real GPU work, same reasoning as the
+    // composition coach and auto-exposure), 16 bins, updated a few times a second.
+    @Published var showHistogram = false
+    @Published var liveHistogram: [Double]?
+    private var histogramCheckCounter = 0
     // Renamed from `hasLiDAR`: the underlying check (`supportedDepthDataFormats`, below)
     // tests real depth-capture capability, not a specific sensor. Naming it "LiDAR" was an
     // assumption baked into a variable name, not something the code actually verified —
@@ -206,6 +220,9 @@ final class CameraModel: NSObject, ObservableObject {
 
     override init() {
         super.init()
+        if let saved = UserDefaults.standard.string(forKey: "com.danielschweiger.cameraobscura.lastLookID") {
+            lookID = saved
+        }
         observeSessionNotifications()
     }
 
@@ -606,6 +623,32 @@ final class CameraModel: NSObject, ObservableObject {
         highlights += (target - highlights) * 0.15
     }
 
+    /// A luminance histogram via CIAreaHistogram (a native GPU reduction, same family as
+    /// the exposure-average sampling above) — asked for directly ("Histogramm-Overlay
+    /// statt blind auf Belichtung zu vertrauen"). Rendered to a 32-bit float bitmap, not
+    /// RGBA8 — raw bin counts for a full frame routinely exceed 255, and reading them back
+    /// as 8-bit would silently clip every bar to a flat ceiling.
+    private func updateHistogram(_ image: CIImage) {
+        guard let histFilter = CIFilter(name: "CIAreaHistogram") else { return }
+        let binCount = 24
+        histFilter.setValue(image, forKey: kCIInputImageKey)
+        histFilter.setValue(CIVector(cgRect: image.extent), forKey: kCIInputExtentKey)
+        histFilter.setValue(binCount, forKey: "inputCount")
+        histFilter.setValue(1.0, forKey: "inputScale")
+        guard let histImage = histFilter.outputImage else { return }
+        var pixels = [Float](repeating: 0, count: binCount * 4)
+        pixels.withUnsafeMutableBytes { ptr in
+            context.render(histImage, toBitmap: ptr.baseAddress!, rowBytes: binCount * 4 * MemoryLayout<Float>.size,
+                            bounds: CGRect(x: 0, y: 0, width: binCount, height: 1), format: .RGBAf, colorSpace: nil)
+        }
+        var bins = [Double](repeating: 0, count: binCount)
+        for i in 0..<binCount {
+            bins[i] = Double(pixels[i * 4] + pixels[i * 4 + 1] + pixels[i * 4 + 2]) / 3.0
+        }
+        let maxVal = bins.max() ?? 0
+        liveHistogram = maxVal > 0 ? bins.map { $0 / maxVal } : bins
+    }
+
     private func applyGrain(to image: CIImage) -> CIImage {
         guard grain else { return image }
         guard let noise = CIFilter(name: "CIRandomGenerator")?.outputImage?.cropped(to: image.extent) else { return image }
@@ -955,6 +998,13 @@ extension CameraModel: AVCaptureVideoDataOutputSampleBufferDelegate {
                 }
             }
 
+            if self.showHistogram {
+                self.histogramCheckCounter += 1
+                if self.histogramCheckCounter % 6 == 0 {
+                    self.updateHistogram(processed)
+                }
+            }
+
             if self.showCompositionCoach, !self.isAnalyzingComposition {
                 self.coachFrameCounter += 1
                 if self.coachFrameCounter % self.coachFrameSkip == 0 {
@@ -1016,11 +1066,23 @@ extension CameraModel {
     func confirmSave(exportPreset: ExportPreset = .original, alsoSaveOriginal: Bool = false) {
         guard let processed = reviewProcessed else { return }
         let exported = exportPreset.apply(to: processed)
+        // Captured here, before discardReview() clears reviewProcessed below — asked for
+        // directly, a small tappable thumbnail confirming what just got saved, like the
+        // camera-roll corner indicator every native camera app has.
+        lastSavedThumbnail = Self.thumbnail(of: exported, maxDimension: 120)
         save(photo: exported, pairedLivePhotoURL: reviewLivePhotoURL)
         if alsoSaveOriginal, let original = reviewOriginal {
             save(photo: exportPreset.apply(to: original), pairedLivePhotoURL: nil)
         }
         discardReview()
+    }
+
+    private static func thumbnail(of image: UIImage, maxDimension: CGFloat) -> UIImage {
+        let scale = maxDimension / max(image.size.width, image.size.height)
+        guard scale < 1 else { return image }
+        let targetSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        let renderer = UIGraphicsImageRenderer(size: targetSize)
+        return renderer.image { _ in image.draw(in: CGRect(origin: .zero, size: targetSize)) }
     }
 
     /// Called from the review screen's "Verwerfen" button, or automatically after saving.
