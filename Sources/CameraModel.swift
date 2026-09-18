@@ -100,6 +100,10 @@ final class CameraModel: NSObject, ObservableObject {
     // Second coaching parameter (asked for explicitly: one axis of input wasn't enough) —
     // which composition the coach aims for, independent of who's doing the moving.
     @Published var compositionStyle: CompositionStyle = .thirds
+    // One of the 47 named numeric presets (portrait/selfie/passport archetypes) — asked
+    // for directly, 30+ of them. Overrides `compositionStyle`'s coarser ranges when set;
+    // nil (the default) means "use the 5-way style picker above instead".
+    @Published var compositionPreset: CompositionPreset?
     @Published var compositionHint: String?
     // Vision's boundingBox convention: normalized 0...1, origin bottom-left, relative to
     // `compositionFrameSize` (the raw, undistorted capture buffer's pixel size at analysis
@@ -844,7 +848,8 @@ final class CameraModel: NSObject, ObservableObject {
                 self.compositionFrameSize = CGSize(width: width, height: height)
                 let distances = boxes.map { self.distanceInMeters(atNormalizedPoint: CGPoint(x: $0.midX, y: $0.midY)) }
                 self.compositionHint = CompositionCoach.hints(
-                    for: boxes, mode: self.coachMode, style: self.compositionStyle, distancesMeters: distances
+                    for: boxes, mode: self.coachMode, style: self.compositionStyle,
+                    preset: self.compositionPreset, distancesMeters: distances
                 ).joined(separator: "\n")
                 self.compositionHint = self.compositionHint?.isEmpty == true ? nil : self.compositionHint
             }

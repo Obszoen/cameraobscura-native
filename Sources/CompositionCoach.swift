@@ -17,10 +17,10 @@ enum CompositionCoach {
     /// independently) — hints always address the individual subject directly once there's
     /// more than one, regardless of `mode`.
     static func hints(for boxes: [CGRect], mode: CameraModel.CoachMode, style: CameraModel.CompositionStyle,
-                       distancesMeters: [Double?]) -> [String] {
+                       preset: CompositionPreset? = nil, distancesMeters: [Double?]) -> [String] {
         guard !boxes.isEmpty else { return [] }
         if boxes.count == 1 {
-            return [hint(for: boxes[0], mode: mode, style: style, distanceMeters: distancesMeters.first ?? nil)]
+            return [hint(for: boxes[0], mode: mode, style: style, preset: preset, distanceMeters: distancesMeters.first ?? nil)]
         }
 
         // Group arrangement: assign each person (by their current left-to-right rank) a
@@ -64,22 +64,28 @@ enum CompositionCoach {
     ///   for anyone who can't judge framing distance by eye alone. Falls back to the
     ///   heuristic below wherever depth isn't available (older devices, or before the first
     ///   depth frame arrives).
+    /// - Parameter preset: one of the 30+ numeric positioning recipes in
+    ///   `CompositionPresets` — overrides `style`'s built-in ranges below with its own
+    ///   distance/headroom/target-mode numbers when present. `style` still decides the
+    ///   fallback when no preset is selected, so existing behavior is unchanged.
     static func hint(for box: CGRect, mode: CameraModel.CoachMode, style: CameraModel.CompositionStyle,
-                      distanceMeters: Double? = nil) -> String {
+                      preset: CompositionPreset? = nil, distanceMeters: Double? = nil) -> String {
         let headroom = 1 - box.maxY
         let height = box.height
+        let isLandscapeLike = preset == nil && style == .landscape
 
-        // Comfortable framing distance range, tuned per style: selfies are shot at
-        // arm's length, editorial/fashion tends tighter than a casual portrait, landscape
-        // has no single subject distance to speak of (skipped below).
+        // Comfortable framing distance range: from the preset when one is selected
+        // (researched per shot type — e.g. selfie ranges are bound to real arm's-length
+        // reach, ~0.3-0.8m, not guessed), otherwise the coarser per-style default.
         let (idealMin, idealMax): (Double, Double) = {
+            if let preset { return (preset.idealDistanceMin, preset.idealDistanceMax) }
             switch style {
             case .selfie: return (0.35, 0.7)
             case .fashion: return (1.0, 2.0)
             default: return (1.2, 2.4)
             }
         }()
-        if style != .landscape, let distanceMeters {
+        if !isLandscapeLike, let distanceMeters {
             if distanceMeters < idealMin {
                 let text = distanceLabel(idealMin - distanceMeters)
                 return mode == .photographerMoves ? "\(text) zurücktreten" : "Bitte \(text) zurücktreten"
@@ -88,7 +94,7 @@ enum CompositionCoach {
                 let text = distanceLabel(distanceMeters - idealMax)
                 return mode == .photographerMoves ? "\(text) näher rangehen" : "Bitte \(text) näher kommen"
             }
-        } else if style != .landscape {
+        } else if !isLandscapeLike {
             if height < 0.22 {
                 return mode == .photographerMoves ? "Näher rangehen" : "Bitte näher zur Kamera kommen"
             }
@@ -97,11 +103,15 @@ enum CompositionCoach {
             }
         }
 
-        // Headroom tolerance, tuned per style: editorial crops tighter (less headroom
-        // tolerated at the top — the tight-crop look fashion editorial is known for),
-        // selfies tolerate more (arm's-length framing rarely gets it razor-precise),
-        // landscape deliberately keeps more sky/environment above a foreground subject.
+        // Headroom tolerance is the closest this app gets to the researched "eyes on the
+        // upper rule-of-thirds line" rule real portrait photographers use: without face-
+        // landmark detection (Vision gives body rectangles here, not eye positions), a
+        // tight headroom band around the head is the honest proxy — tighter bands (beauty
+        // close-up, passport) push the head/eye-line higher and more precisely than loose
+        // ones (environmental, landscape). Preset values encode this per shot type when a
+        // preset is selected; otherwise the coarser per-style default applies.
         let (headroomMax, headroomMin): (Double, Double) = {
+            if let preset { return (preset.headroomMax, preset.headroomMin) }
             switch style {
             case .fashion: return (0.18, 0.01)
             case .selfie: return (0.35, 0.0)
@@ -116,7 +126,7 @@ enum CompositionCoach {
             return mode == .photographerMoves ? "Kamera leicht anheben" : "Kamera wird angehoben, bitte kurz warten"
         }
 
-        guard let offset = horizontalOffset(for: box, style: style) else {
+        guard let offset = horizontalOffset(for: box, style: style, presetMode: preset?.targetMode) else {
             return "Komposition sitzt ✓"
         }
         if mode == .photographerMoves {
@@ -131,8 +141,8 @@ enum CompositionCoach {
 
     /// The crosshair's target position, normalized 0...1 bottom-left — same convention as
     /// `box` — or nil once the subject is already close enough to it to stop nudging.
-    static func target(for box: CGRect, style: CameraModel.CompositionStyle) -> CGPoint? {
-        guard let offset = horizontalOffset(for: box, style: style) else { return nil }
+    static func target(for box: CGRect, style: CameraModel.CompositionStyle, preset: CompositionPreset? = nil) -> CGPoint? {
+        guard let offset = horizontalOffset(for: box, style: style, presetMode: preset?.targetMode) else { return nil }
         let targetX = box.midX - offset
         return CGPoint(x: targetX, y: box.midY)
     }
@@ -160,16 +170,25 @@ enum CompositionCoach {
     /// (nothing left to nudge). The target line itself depends on `style`: the two
     /// rule-of-thirds lines, dead-center, or (fashion/landscape) the golden-ratio points
     /// (0.382/0.618) editorial and landscape work leans on more than strict thirds.
-    private static func horizontalOffset(for box: CGRect, style: CameraModel.CompositionStyle) -> CGFloat? {
+    private static func horizontalOffset(for box: CGRect, style: CameraModel.CompositionStyle,
+                                          presetMode: CompositionPreset.TargetMode? = nil) -> CGFloat? {
         let centerX = box.midX
         let target: CGFloat
-        switch style {
-        case .thirds, .selfie:
-            target = centerX < 0.5 ? (1.0 / 3.0) : (2.0 / 3.0)
-        case .centered:
-            target = 0.5
-        case .fashion, .landscape:
-            target = centerX < 0.5 ? 0.382 : 0.618
+        if let presetMode {
+            switch presetMode {
+            case .thirds: target = centerX < 0.5 ? (1.0 / 3.0) : (2.0 / 3.0)
+            case .centered: target = 0.5
+            case .golden: target = centerX < 0.5 ? 0.382 : 0.618
+            }
+        } else {
+            switch style {
+            case .thirds, .selfie:
+                target = centerX < 0.5 ? (1.0 / 3.0) : (2.0 / 3.0)
+            case .centered:
+                target = 0.5
+            case .fashion, .landscape:
+                target = centerX < 0.5 ? 0.382 : 0.618
+            }
         }
         let offset = centerX - target
         return abs(offset) > 0.09 ? offset : nil

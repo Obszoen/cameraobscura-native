@@ -19,6 +19,7 @@ struct ContentView: View {
     @State private var showingSettings = false
     @State private var pinchStartZoom: CGFloat?
     @State private var rotationStartValue: Double?
+    @State private var lastCompositionPresetIndex: Int?
     @State private var showGrid = false
     @State private var lastShuffleIndex: Int?
     @State private var shuffledPresetName: String?
@@ -119,7 +120,7 @@ struct ContentView: View {
                         personBoxes: camera.personBoxes,
                         targets: camera.personBoxes.count > 1
                             ? CompositionCoach.targets(for: camera.personBoxes)
-                            : [CompositionCoach.target(for: camera.personBoxes[0], style: camera.compositionStyle)],
+                            : [CompositionCoach.target(for: camera.personBoxes[0], style: camera.compositionStyle, preset: camera.compositionPreset)],
                         bufferSize: camera.compositionFrameSize,
                         accent: settings.crosshairColor
                     )
@@ -298,18 +299,48 @@ struct ContentView: View {
                     ForEach(CameraModel.CompositionStyle.allCases, id: \.self) { style in
                         Button {
                             camera.compositionStyle = style
+                            camera.compositionPreset = nil
                         } label: {
                             Text(style.label)
                                 .font(.caption2.bold())
                                 .padding(.horizontal, 10).padding(.vertical, 5)
-                                .background(camera.compositionStyle == style ? Brand.mint.opacity(0.25) : Color.black.opacity(0.4))
-                                .foregroundStyle(camera.compositionStyle == style ? Brand.mint : .white.opacity(0.7))
+                                .background(camera.compositionStyle == style && camera.compositionPreset == nil ? Brand.mint.opacity(0.25) : Color.black.opacity(0.4))
+                                .foregroundStyle(camera.compositionStyle == style && camera.compositionPreset == nil ? Brand.mint : .white.opacity(0.7))
                                 .clipShape(Capsule())
                         }
                     }
                 }
             }
             .frame(maxWidth: 280)
+
+            // 47 finer numeric presets (30 general + 15 selfie + 2 Passfoto), asked for
+            // directly — overrides the coarse style row above when one is picked.
+            // Randomizable ("wahlweise randomisieren", asked for directly), same "never
+            // twice in a row" pattern as the photo-preset shuffle.
+            HStack(spacing: 6) {
+                Button {
+                    var index = Int.random(in: 0..<CompositionPresets.all.count)
+                    if index == lastCompositionPresetIndex {
+                        index = (index + 1) % CompositionPresets.all.count
+                    }
+                    lastCompositionPresetIndex = index
+                    camera.compositionPreset = CompositionPresets.all[index]
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                } label: {
+                    Label("Präzise Presets würfeln", systemImage: "dice.fill")
+                        .font(.caption2.bold())
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .background(Brand.skyBlue.opacity(0.22))
+                        .foregroundStyle(Brand.skyBlue)
+                        .clipShape(Capsule())
+                }
+                if let preset = camera.compositionPreset {
+                    Text(preset.name)
+                        .font(.caption2.bold())
+                        .foregroundStyle(Brand.skyBlue)
+                        .lineLimit(1)
+                }
+            }
         }
         .padding(.top, 6)
     }
