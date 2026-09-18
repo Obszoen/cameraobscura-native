@@ -5,9 +5,12 @@ import Foundation
 /// numeric knobs `CompositionCoach.hint(...)` already exposes (target-line mode, ideal
 /// distance range, headroom tolerance). Named after documented shot archetypes (portrait,
 /// beauty close-up, editorial full-body, environmental, group triangle, landscape-with-
-/// figure, etc.) — the same honesty boundary as the curated photo presets: these encode
-/// publicly-known composition technique, not literal parameters from any named
-/// photographer, because no such dataset is publicly accessible.
+/// figure, etc.) — grounded in describable, observable style conventions real magazines
+/// and editorial work are known to use (tight vertical crops with headroom left for a
+/// masthead on a "Vogue-cover"-style shot, low-headroom rule-of-thirds horizons in
+/// landscape/travel spreads), not literal parameters attributed to any named individual
+/// photographer — no such dataset is publicly accessible, and fabricating numbers under a
+/// real person's name would be exactly that: fabrication, not research.
 struct CompositionPreset: Identifiable, Hashable {
     let id: String
     let name: String

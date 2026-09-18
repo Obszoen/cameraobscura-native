@@ -1,17 +1,16 @@
 import SwiftUI
 
 /// The branded 5-second intro, exact timeline as specified: a person's reflection sits in
-/// the lens for 1.5s, then the shutter fires (blades snap shut fast), then a slow graceful
-/// reopen sweeps through the brand's complementary palette and lands on the app icon at
-/// t=5.0s.
-///
-/// Built natively in SwiftUI rather than as a pre-rendered Blender video — after tonight's
-/// rocker-switch render came out unconvincing twice in a row (material/geometry issues that
-/// needed real iteration to debug blind), a hand-tuned vector choreography here is the
-/// reliable path to something that actually looks finished tonight, not a gamble on a third
-/// render. The aperture blades are a stylized pinwheel-sweep, not a photometrically exact
-/// iris — real depth/lighting/shading polish on an actual 3D-rendered version is exactly
-/// the kind of follow-up work handed off separately (see the Codex brief in PROJECT.md).
+/// the lens for 1.5s, then the shutter fires and the aperture goes through a real
+/// mechanical close-hold-reopen — an actual Blender-rendered clip
+/// (`Resources/aperture.mp4`, see `render_aperture.py` in the session scratch history), not
+/// a vector approximation. Third geometry attempt on that render, each of the first two
+/// diagnosed and fixed rather than blindly retried (double-offset mesh construction on the
+/// first; a rotation pivot that coincided with the tip vertex — provably unable to move —
+/// on the second); this one uses simple wedges with the tip fixed exactly at the world
+/// origin by construction and scale-animates them open/closed, which has no equivalent
+/// failure mode. Flattened onto Brand.ground during render (not a real alpha channel), so
+/// it composites as a plain rectangle — same background color as the splash itself.
 ///
 /// The "reflection" is necessarily abstract (a soft humanoid silhouette, not a real camera
 /// feed — nothing is actually being captured yet at this point in the app) but reads
@@ -22,12 +21,10 @@ struct SplashView: View {
 
     @State private var silhouetteOpacity: Double = 0
     @State private var breathe = false
-    @State private var bladeOpenness: Double = 1   // 1 = open/retracted, 0 = fully shut
+    @State private var playAperture = false
     @State private var flashOpacity: Double = 0
     @State private var gradientProgress: Double = 0
     @State private var iconAppear: Double = 0
-
-    private let bladeCount = 7
 
     var body: some View {
         ZStack {
@@ -45,14 +42,9 @@ struct SplashView: View {
             .mask(Circle().frame(width: 300, height: 300))
 
             ZStack {
-                // The lens: a dark glass disc with a faint rim highlight.
-                Circle()
-                    .fill(RadialGradient(colors: [Color(white: 0.14), Brand.ground], center: .center, startRadius: 0, endRadius: 150))
-                    .overlay(Circle().stroke(.white.opacity(0.12), lineWidth: 2))
-                    .frame(width: 240, height: 240)
-
                 // The reflection — abstract, deliberately soft, gone the instant the
-                // shutter fires (0.0-1.5s only).
+                // shutter fires (0.0-1.5s only). Sits behind the aperture video so the
+                // video's own rendered lens face naturally covers it once playback starts.
                 SilhouetteShape()
                     .fill(LinearGradient(colors: [.white.opacity(0.22), .white.opacity(0.05)], startPoint: .top, endPoint: .bottom))
                     .frame(width: 120, height: 170)
@@ -60,14 +52,10 @@ struct SplashView: View {
                     .blur(radius: 3)
                     .opacity(silhouetteOpacity)
 
-                // Aperture blades — closed = fully covers the lens (the shutter-fired
-                // instant), open = retracted to a thin ring at the very edge.
-                ForEach(0..<bladeCount, id: \.self) { i in
-                    ApertureBlade(bladeCount: bladeCount, index: i, openness: bladeOpenness)
-                        .fill(Brand.ground)
-                }
-                .frame(width: 240, height: 240)
-                .clipShape(Circle())
+                ApertureVideoView(trigger: playAperture)
+                    .frame(width: 240, height: 240)
+                    .clipShape(Circle())
+                    .overlay(Circle().stroke(.white.opacity(0.12), lineWidth: 2))
 
                 Circle()
                     .fill(.white)
@@ -93,27 +81,21 @@ struct SplashView: View {
         .onAppear { runTimeline() }
     }
 
-    /// Every duration below sums to exactly 5.0s: 1.5s reflection, ~0.15s shutter-fire,
-    /// ~2.6s graceful reopen (gradient sweeping the whole time), ~0.75s icon reveal.
+    /// 1.5s reflection, then the rendered aperture clip (44 frames / 30fps ≈ 1.47s: closes
+    /// fast, holds, reopens) plays once, then icon reveal fills the rest — sums to 5.0s.
     private func runTimeline() {
         withAnimation(.easeOut(duration: 0.3)) { silhouetteOpacity = 1 }
         withAnimation(.easeInOut(duration: 2.4).repeatForever(autoreverses: true)) { breathe = true }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
             withAnimation(.linear(duration: 0.1)) { silhouetteOpacity = 0 }
-            withAnimation(.easeIn(duration: 0.15)) { bladeOpenness = 0 }
-            withAnimation(.easeOut(duration: 0.08).delay(0.1)) { flashOpacity = 0.7 }
-            withAnimation(.easeIn(duration: 0.25).delay(0.15)) { flashOpacity = 0 }
+            withAnimation(.easeOut(duration: 0.08)) { flashOpacity = 0.7 }
+            withAnimation(.easeIn(duration: 0.25).delay(0.08)) { flashOpacity = 0 }
+            playAperture = true
+            withAnimation(.easeInOut(duration: 1.47)) { gradientProgress = 1 }
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.65) {
-            withAnimation(.easeInOut(duration: 2.6)) {
-                bladeOpenness = 1
-                gradientProgress = 1
-            }
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4.25) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.97) {
             withAnimation(.spring(response: 0.55, dampingFraction: 0.75)) { iconAppear = 1 }
         }
 
@@ -142,47 +124,6 @@ private struct SilhouetteShape: Shape {
             control1: CGPoint(x: rect.maxX + rect.width * 0.1, y: rect.maxY - rect.height * 0.15),
             control2: CGPoint(x: rect.midX + rect.width * 0.1, y: headCenter.y + headRadius)
         )
-        return path
-    }
-}
-
-/// One aperture blade — a triangular wedge that sweeps from covering the whole lens
-/// (`openness` 0) to retracted near its own outer edge (`openness` 1). `animatableData`
-/// makes `openness` interpolate smoothly under `withAnimation`, exactly like any other
-/// SwiftUI-animatable property.
-private struct ApertureBlade: Shape {
-    let bladeCount: Int
-    let index: Int
-    var openness: Double
-
-    var animatableData: Double {
-        get { openness }
-        set { openness = newValue }
-    }
-
-    func path(in rect: CGRect) -> Path {
-        let center = CGPoint(x: rect.midX, y: rect.midY)
-        // Exactly half the frame, not further — a Shape's fill isn't automatically clipped
-        // to its own layout frame, so anything bigger would visibly overflow the lens circle.
-        let radius = min(rect.width, rect.height) * 0.5
-        let angleStep = 2 * Double.pi / Double(bladeCount)
-        let baseAngle = angleStep * Double(index)
-        let innerReach = radius * (1 - max(0, min(openness, 1)))
-        // Explicit Double math, converted to CGFloat only at the end — mixing CGFloat
-        // arithmetic directly into cos()/sin() calls left the compiler unable to pick an
-        // overload ("ambiguous use of 'cos'"), confirmed by the actual build error, not
-        // guessed.
-        func point(angle: Double, distance: CGFloat) -> CGPoint {
-            CGPoint(x: center.x + distance * CGFloat(cos(angle)), y: center.y + distance * CGFloat(sin(angle)))
-        }
-        let p1 = point(angle: baseAngle, distance: radius)
-        let p2 = point(angle: baseAngle + angleStep, distance: radius)
-        let tip = point(angle: baseAngle + angleStep / 2, distance: innerReach)
-        var path = Path()
-        path.move(to: p1)
-        path.addLine(to: tip)
-        path.addLine(to: p2)
-        path.addLine(to: p1)
         return path
     }
 }
