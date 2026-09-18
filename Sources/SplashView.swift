@@ -168,10 +168,16 @@ private struct ApertureBlade: Shape {
         let angleStep = 2 * Double.pi / Double(bladeCount)
         let baseAngle = angleStep * Double(index)
         let innerReach = radius * (1 - max(0, min(openness, 1)))
-        let p1 = CGPoint(x: center.x + radius * cos(baseAngle), y: center.y + radius * sin(baseAngle))
-        let p2 = CGPoint(x: center.x + radius * cos(baseAngle + angleStep), y: center.y + radius * sin(baseAngle + angleStep))
-        let tip = CGPoint(x: center.x + innerReach * cos(baseAngle + angleStep / 2),
-                           y: center.y + innerReach * sin(baseAngle + angleStep / 2))
+        // Explicit Double math, converted to CGFloat only at the end — mixing CGFloat
+        // arithmetic directly into cos()/sin() calls left the compiler unable to pick an
+        // overload ("ambiguous use of 'cos'"), confirmed by the actual build error, not
+        // guessed.
+        func point(angle: Double, distance: CGFloat) -> CGPoint {
+            CGPoint(x: center.x + distance * CGFloat(cos(angle)), y: center.y + distance * CGFloat(sin(angle)))
+        }
+        let p1 = point(angle: baseAngle, distance: radius)
+        let p2 = point(angle: baseAngle + angleStep, distance: radius)
+        let tip = point(angle: baseAngle + angleStep / 2, distance: innerReach)
         var path = Path()
         path.move(to: p1)
         path.addLine(to: tip)
