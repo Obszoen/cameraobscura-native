@@ -20,13 +20,20 @@ struct SplashView: View {
         ZStack {
             Brand.ground.ignoresSafeArea()
 
+            // Genuine complementary contrast (rose vs. mint, not one flat hue) — asked for
+            // directly ("künstlerischer, mit Komplementärfarben spielen"), same pairing as
+            // AccountGateView so the two screens read as one designed sequence.
             Circle()
-                .fill(
-                    RadialGradient(colors: [Brand.rose.opacity(0.35), .clear],
-                                   center: .center, startRadius: 0, endRadius: 220)
-                )
+                .fill(RadialGradient(colors: [Brand.rose.opacity(0.35), .clear], center: .center, startRadius: 0, endRadius: 220))
                 .frame(width: 440, height: 440)
+                .offset(x: -60, y: -40)
                 .scaleEffect(pulsing ? 1.08 : 0.92)
+                .opacity(appeared ? 1 : 0)
+            Circle()
+                .fill(RadialGradient(colors: [Brand.mint.opacity(0.28), .clear], center: .center, startRadius: 0, endRadius: 220))
+                .frame(width: 440, height: 440)
+                .offset(x: 60, y: 40)
+                .scaleEffect(pulsing ? 0.92 : 1.08)
                 .opacity(appeared ? 1 : 0)
 
             VStack(spacing: 26) {
