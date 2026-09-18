@@ -19,6 +19,7 @@ struct ContentView: View {
     @State private var showingSettings = false
     @State private var pinchStartZoom: CGFloat?
     @State private var rotationStartValue: Double?
+    @State private var selfieSwipeStartValue: Double?
     @State private var lastCompositionPresetIndex: Int?
     // Shown once, ever, per device — asked for directly: two custom gestures (rotate,
     // double-tap-reset) had no explanation anywhere, so the good feel of the rotate
@@ -234,7 +235,7 @@ struct ContentView: View {
                         VStack(alignment: .leading, spacing: 10) {
                             Label("Zwei-Finger-Dreh-Geste", systemImage: "hand.draw")
                                 .font(.caption.bold())
-                            Text("Mit zwei Fingern direkt im Sucher drehen, um den zuletzt berührten Regler zu verstellen — welcher das ist, siehst du unten rechts markiert.")
+                            Text("Mit zwei Fingern direkt im Sucher drehen, um den zuletzt berührten Regler zu verstellen — welcher das ist, siehst du unten rechts markiert. Bei der Frontkamera reicht ein Finger: einfach senkrecht wischen, praktisch für Selfies mit nur einer freien Hand.")
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                             Label("Doppeltipp auf einen Regler", systemImage: "hand.tap")
@@ -290,12 +291,50 @@ struct ContentView: View {
                         // A full 180° turn sweeps the whole 0...1 range — enough travel to
                         // feel deliberate without needing an unrealistic full rotation.
                         let delta = angle.degrees / 180
-                        let newValue = min(max((rotationStartValue ?? getter()) + delta, 0), 1)
+                        let previousValue = getter()
+                        let newValue = min(max((rotationStartValue ?? previousValue) + delta, 0), 1)
+                        // A tick every 10% crossed, asked for directly — same feel as the
+                        // knobs themselves, so the gesture reads as a real control, not a
+                        // silent one.
+                        if Int((previousValue * 10).rounded()) != Int((newValue * 10).rounded()) {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred(intensity: 0.4)
+                        }
                         setter(newValue)
                         activeControl.showWhileRotating(value: newValue)
                     }
                     .onEnded { _ in
                         rotationStartValue = nil
+                        activeControl.end()
+                    }
+            )
+            // One-finger vertical swipe, same target/effect as the two-finger rotate above
+            // — asked for directly: a selfie is usually shot one-handed (thumb only), where
+            // a two-finger gesture simply isn't reachable. Always attached (a ternary
+            // Optional-Gesture here would risk a type-inference dead end, the same reason
+            // the bottom-edge panel-dismiss gesture elsewhere in this file checks its
+            // condition inside the handler instead) but only acts for the front camera,
+            // where the one-handed constraint actually applies — the rear camera keeps
+            // two-finger rotate as the primary gesture so this doesn't fight tap-to-focus/
+            // pinch-zoom there. `minimumDistance: 16` so a plain tap-to-focus still
+            // recognizes cleanly.
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 16)
+                    .onChanged { drag in
+                        guard camera.isUsingFrontCamera,
+                              let getter = activeControl.lastGetter, let setter = activeControl.lastSetter else { return }
+                        if selfieSwipeStartValue == nil { selfieSwipeStartValue = getter() }
+                        let previousValue = getter()
+                        let delta = Double(-drag.translation.height / 220)
+                        let newValue = min(max((selfieSwipeStartValue ?? previousValue) + delta, 0), 1)
+                        if Int((previousValue * 10).rounded()) != Int((newValue * 10).rounded()) {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred(intensity: 0.4)
+                        }
+                        setter(newValue)
+                        activeControl.showWhileRotating(value: newValue)
+                    }
+                    .onEnded { _ in
+                        guard selfieSwipeStartValue != nil else { return }
+                        selfieSwipeStartValue = nil
                         activeControl.end()
                     }
             )
