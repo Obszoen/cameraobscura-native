@@ -28,6 +28,10 @@ struct ContentView: View {
     @AppStorage("com.danielschweiger.cameraobscura.hasSeenPrivacyNote") private var hasSeenPrivacyNote = false
     @State private var showingPrivacyNote = false
     @State private var lastCompositionPresetIndex: Int?
+    /// Favorite looks are stored as IDs so the user's filter curation survives
+    /// reopening the panel and relaunching the app.
+    @State private var favoriteLookIDs: Set<String> = []
+    @AppStorage("com.danielschweiger.cameraobscura.favoriteLookIDs") private var favoriteLookIDsData = Data()
     // Shown once, ever, per device — asked for directly: two custom gestures (rotate,
     // double-tap-reset) had no explanation anywhere, so the good feel of the rotate
     // gesture in particular "read as a random find" instead of an intentional control.
@@ -60,7 +64,15 @@ struct ContentView: View {
         .animation(.spring(response: 0.38, dampingFraction: 0.86), value: showingAdjustments)
         .environmentObject(activeControl)
         .environmentObject(settings)
-        .onAppear { camera.start() }
+        .onAppear {
+            camera.start()
+            if let decoded = try? JSONDecoder().decode(Set<String>.self, from: favoriteLookIDsData) {
+                favoriteLookIDs = decoded
+            }
+        }
+        .onChange(of: favoriteLookIDs) { updated in
+            favoriteLookIDsData = (try? JSONEncoder().encode(updated)) ?? Data()
+        }
         .onDisappear { camera.stop() }
         // Backgrounding the app must stop the camera/GPU pipeline immediately, not just
         // when the view happens to be torn down — a live camera + Metal filters running
@@ -894,6 +906,27 @@ struct ContentView: View {
                                             .strokeBorder(Brand.rose, lineWidth: camera.lookID == look.id ? 2 : 0)
                                     )
                                     .shadow(color: .black.opacity(0.4), radius: 2, y: 1)
+                                    // A real Blender-rendered switch per filter, asked for
+                                    // literally ("Kippschalter für die Filter") — a favorite
+                                    // pin, not the selection itself (a 22-way choice can't
+                                    // structurally be a binary switch, but each one can
+                                    // still carry a real switch element).
+                                    .overlay(alignment: .topTrailing) {
+                                        Button {
+                                            if favoriteLookIDs.contains(look.id) {
+                                                favoriteLookIDs.remove(look.id)
+                                            } else {
+                                                favoriteLookIDs.insert(look.id)
+                                            }
+                                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                            if settings.soundEnabled { CameraSounds.toggleClick() }
+                                        } label: {
+                                            Image(favoriteLookIDs.contains(look.id) ? "SwitchOn" : "SwitchOff")
+                                                .resizable()
+                                                .frame(width: 18, height: 18)
+                                                .offset(x: 6, y: -6)
+                                        }
+                                    }
                                 PanelLED(isOn: camera.lookID == look.id, color: Brand.rose)
                             }
                         }

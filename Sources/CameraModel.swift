@@ -1027,7 +1027,16 @@ extension CameraModel: AVCapturePhotoCaptureDelegate {
             // A ProRAW capture also delivers this processed HEIC companion — when we asked
             // for RAW we use that instead (more headroom), so skip this one to avoid
             // presenting two review screens for one shutter press.
-            guard !self.expectingRawCapture, let ciImage = CIImage(data: data) else { return }
+            //
+            // `.applyOrientationProperty: true` is not optional here — reported directly
+            // ("das bild [ist] nach links gekippt"): CIImage(data:) on its own reads the
+            // file's raw pixel buffer and IGNORES the embedded EXIF orientation tag by
+            // default, so a portrait capture (tagged "rotate me" but stored sensor-native)
+            // came out sideways in the before/after review. This option makes Core Image
+            // actually bake the tagged rotation into the image instead of silently
+            // discarding it.
+            guard !self.expectingRawCapture,
+                  let ciImage = CIImage(data: data, options: [.applyOrientationProperty: true]) else { return }
             self.finishReview(original: ciImage)
         }
     }
